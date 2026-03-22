@@ -77,18 +77,18 @@ When completing a phase and cutting a new version, use **exactly** this format s
 Extract the release notes automatically:
 
 ```bash
-# Get the release notes for a specific version from CHANGELOG.md
-RELEASE_NOTES=$(awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | head -n -2)
+# Extract release notes — works on macOS (BSD) and Linux
+# Replace [0.1.0] with the version being released, and [Unreleased] with the section above it
 
 gh pr create \
   --title "🚀 Release v0.1.0 — Phase 1: Foundation" \
-  --body "$(awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | head -n -2)
+  --body "$(awk '/^## \[0\.1\.0\]/,/^## \[Unreleased\]/' CHANGELOG.md | grep -v '^## \[Unreleased\]')
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)" \
   --reviewer zurek11
 ```
 
-Adjust the version pattern in the `awk` command to match the version being released.
+The awk pattern `'/^## \[VERSION\]/,/^## \[PREV_SECTION\]/'` extracts from the version header to the next section. Adjust both patterns to match the version being released and the section immediately above it in CHANGELOG.md (typically `[Unreleased]` for the latest release).
 
 **Rules for release PRs:**
 1. Title always starts with `🚀 Release v{X.Y.Z}`
