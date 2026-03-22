@@ -30,7 +30,7 @@ Learning by building. This project covers:
 
 ### Prerequisites
 
-- [Go 1.22+](https://go.dev/dl/)
+- [Go 1.26+](https://go.dev/dl/)
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
 - [Make](https://www.gnu.org/software/make/) (optional, for convenience)
 

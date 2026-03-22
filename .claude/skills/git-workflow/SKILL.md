@@ -36,14 +36,68 @@ make lint     # golangci-lint clean
 - `infra/[description]` — infrastructure changes
 - Feature branches → PR → main. Adam reviews and merges.
 
+---
+
 ## PR Creation
+
+### Feature / Fix PR
+
+For regular feature or fix work:
 
 ```bash
 gh pr create \
   --title "🎉 feat: add event tracking pipeline" \
-  --body "## What's new\n\n- Event tracking HTTP endpoint\n- Kafka producer integration\n- Unit tests for validation" \
+  --body "$(cat <<'EOF'
+## Summary
+
+- Event tracking HTTP endpoint added
+- Kafka producer integration
+- Unit tests for validation
+
+## Test plan
+
+- [ ] `make test` passes
+- [ ] `make lint` passes
+- [ ] `curl /api/v1/track` returns 202
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)" \
   --reviewer zurek11
 ```
+
+### Release PR
+
+When completing a phase and cutting a new version, use **exactly** this format so all release PRs are consistent:
+
+**Title:** `🚀 Release v{version} — {phase description}`
+
+**Body:** The CHANGELOG.md section for that version verbatim, followed by the standard footer.
+
+Extract the release notes automatically:
+
+```bash
+# Get the release notes for a specific version from CHANGELOG.md
+RELEASE_NOTES=$(awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | head -n -2)
+
+gh pr create \
+  --title "🚀 Release v0.1.0 — Phase 1: Foundation" \
+  --body "$(awk '/^## \[0\.1\.0\]/,/^## \[/' CHANGELOG.md | head -n -2)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)" \
+  --reviewer zurek11
+```
+
+Adjust the version pattern in the `awk` command to match the version being released.
+
+**Rules for release PRs:**
+1. Title always starts with `🚀 Release v{X.Y.Z}`
+2. Title always ends with the phase name from CHANGELOG (e.g. `— Phase 1: Foundation`)
+3. Body always opens with the verbatim CHANGELOG section for that version
+4. Body always ends with the `🤖 Generated with Claude Code` footer
+5. Always tag `--reviewer zurek11`
+
+---
 
 ## Rules
 
@@ -53,3 +107,4 @@ gh pr create \
 4. Double-check no secrets in diff before push
 5. Run `make test && make lint` before every push
 6. Always create PR with `--reviewer zurek11`
+7. Update `CHANGELOG.md` before cutting a release PR

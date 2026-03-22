@@ -315,14 +315,14 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Basic project structure, Docker Compose, and a working "hello world" Go service.
 
-- [ ] Initialize Go modules for `services/api` and `services/consumer`
-- [ ] Create `docker-compose.yml` with Kafka (+ Zookeeper), MongoDB, Prometheus, Grafana
-- [ ] API: `GET /health` returns `{ "status": "ok" }`
-- [ ] API: Structured logging with `log/slog`
-- [ ] Makefile with `up`, `down`, `logs` targets
-- [ ] Verify: `docker compose up -d` starts everything clean, `curl /health` works
+- [x] Initialize Go modules for `services/api` and `services/consumer`
+- [x] Create `docker-compose.yml` with Kafka (KRaft, no Zookeeper), MongoDB, Prometheus, Grafana, Kafka UI, Mongo Express
+- [x] API: `GET /health` returns `{ "status": "ok" }`
+- [x] API: Structured logging with `log/slog`
+- [x] Makefile with `up`, `down`, `logs` targets
+- [x] Verify: `docker compose up -d` starts everything clean, `curl /health` works
 
-**Acceptance:** Stack starts with one command, health endpoint responds.
+**Acceptance:** Stack starts with one command, health endpoint responds. ✅ — released as v0.1.0
 
 ---
 
