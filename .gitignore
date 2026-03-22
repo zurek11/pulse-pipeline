@@ -1,0 +1,51 @@
+# Binaries
+bin/
+services/api/api
+services/consumer/consumer
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go test artifacts
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Go workspace (not used in this project)
+go.work
+go.work.sum
+
+# Environment — NEVER commit real secrets
+.env
+
+# Terraform state and local config
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/*.tfvars
+infra/terraform/override.tf
+infra/terraform/override.tf.json
+infra/terraform/.terraform.lock.hcl
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
+*.swp
+*.swo
+*.swn
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Docker build cache artifacts
+.docker/
+
+# Log files
+*.log

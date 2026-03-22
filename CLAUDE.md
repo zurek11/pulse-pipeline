@@ -12,7 +12,7 @@ Learning project for Go, Apache Kafka, MongoDB, and GCP — a mini real-time eve
 
 ## Stack
 
-- **Language:** Go 1.22+ (standard library preferred, minimal dependencies)
+- **Language:** Go 1.26+ (standard library preferred, minimal dependencies)
 - **Streaming:** Apache Kafka (Confluent Go client)
 - **Storage:** MongoDB (official Go driver)
 - **Metrics:** Prometheus (client_golang)
@@ -162,9 +162,11 @@ pulse-pipeline/
 1. Create branch from main
 2. Implement + write tests
 3. Run: `make test && make lint`
-4. Update CHANGELOG.md
+4. Update CHANGELOG.md (move items from `[Unreleased]` to new version section)
 5. Commit + push
-6. Create PR with `--reviewer zurek11`
+6. Create PR — see **git-workflow** skill for exact title/body format
+   - Release PRs: title `🚀 Release v{version} — {phase}`, body = CHANGELOG section
+   - Feature PRs: title with emoji prefix, body with summary + test plan
 
 ## Claude Code Configuration
 
