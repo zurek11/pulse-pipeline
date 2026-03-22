@@ -1,0 +1,25 @@
+{
+	"permissions": {
+		"allow": [
+			"Bash(go:*)",
+			"Bash(make:*)",
+			"Bash(git:*)",
+			"Bash(gh:*)",
+			"Bash(docker:*)",
+			"Bash(docker compose:*)",
+			"Bash(terraform:*)",
+			"Bash(golangci-lint:*)",
+			"Read",
+			"Write",
+			"Edit",
+			"Glob",
+			"Grep"
+		],
+		"deny": [
+			"Bash(rm -rf /)",
+			"Bash(curl:*)",
+			"Bash(wget:*)",
+			"Bash(gcloud:*)"
+		]
+	}
+}
