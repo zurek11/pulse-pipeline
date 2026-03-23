@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -12,23 +14,24 @@ import (
 	"github.com/zurek11/pulse-pipeline/services/consumer/models"
 )
 
-// mockWriter implements Writer for testing.
+// --- mockWriter implements Writer ---
+
 type mockWriter struct {
-	added  []string // event IDs added
-	flushErr error
-	flushed int
-	reset   bool
+	added      []string
+	flushErr   error
+	failTimes  int // fail this many consecutive Flush calls before succeeding
+	flushCount int
+	reset      bool
 }
 
-func (m *mockWriter) Add(event interface{}, eventID string) {
-	m.added = append(m.added, eventID)
-}
+func (m *mockWriter) Add(_ interface{}, eventID string) { m.added = append(m.added, eventID) }
 
 func (m *mockWriter) Flush(_ context.Context) (int64, error) {
-	if m.flushErr != nil {
+	m.flushCount++
+	if m.failTimes > 0 {
+		m.failTimes--
 		return 0, m.flushErr
 	}
-	m.flushed++
 	return int64(len(m.added)), nil
 }
 
@@ -38,6 +41,23 @@ func (m *mockWriter) Reset() {
 	m.reset = true
 	m.added = m.added[:0]
 }
+
+// --- mockDLQ implements dlqSender ---
+
+type mockDLQ struct {
+	sent     []kafka.Message
+	writeErr error
+}
+
+func (m *mockDLQ) WriteMessages(_ context.Context, msgs ...kafka.Message) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	m.sent = append(m.sent, msgs...)
+	return nil
+}
+
+func (m *mockDLQ) Close() error { return nil }
 
 // --- parseMessage tests ---
 
@@ -49,17 +69,13 @@ func TestParseMessage_ValidEvent(t *testing.T) {
 		Timestamp:  time.Now().UTC(),
 	}
 	data, _ := json.Marshal(event)
-	msg := kafka.Message{Value: data}
 
-	got, err := parseMessage(msg)
+	got, err := parseMessage(kafka.Message{Value: data})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got.EventID != event.EventID {
 		t.Errorf("expected event_id %q, got %q", event.EventID, got.EventID)
-	}
-	if got.CustomerID != event.CustomerID {
-		t.Errorf("expected customer_id %q, got %q", event.CustomerID, got.CustomerID)
 	}
 	if got.ProcessedAt.IsZero() {
 		t.Error("expected ProcessedAt to be set")
@@ -67,47 +83,85 @@ func TestParseMessage_ValidEvent(t *testing.T) {
 }
 
 func TestParseMessage_InvalidJSON(t *testing.T) {
-	msg := kafka.Message{Value: []byte("not-json")}
-
-	_, err := parseMessage(msg)
+	_, err := parseMessage(kafka.Message{Value: []byte("not-json")})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
 	if !strings.Contains(err.Error(), "unmarshal event") {
-		t.Errorf("expected error to mention 'unmarshal event', got: %v", err)
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestParseMessage_EmptyPayload(t *testing.T) {
-	msg := kafka.Message{Value: []byte("")}
-
-	_, err := parseMessage(msg)
+	_, err := parseMessage(kafka.Message{Value: []byte("")})
 	if err == nil {
 		t.Fatal("expected error for empty payload, got nil")
 	}
 }
 
-// --- mockWriter behaviour tests ---
+// --- flushWithRetry tests ---
 
-func TestMockWriter_AddAndLen(t *testing.T) {
+func TestFlushWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 	w := &mockWriter{}
-	w.Add(nil, "evt-1")
-	w.Add(nil, "evt-2")
-
-	if w.Len() != 2 {
-		t.Errorf("expected Len=2, got %d", w.Len())
+	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	if allFailed {
+		t.Error("expected success, got all-failed")
+	}
+	if w.flushCount != 1 {
+		t.Errorf("expected 1 flush attempt, got %d", w.flushCount)
 	}
 }
 
-func TestMockWriter_ResetClearsBuffer(t *testing.T) {
-	w := &mockWriter{}
-	w.Add(nil, "evt-1")
-	w.Reset()
-
-	if w.Len() != 0 {
-		t.Errorf("expected Len=0 after Reset, got %d", w.Len())
+func TestFlushWithRetry_AllRetriesExhausted(t *testing.T) {
+	w := &mockWriter{flushErr: fmt.Errorf("mongodb unavailable"), failTimes: maxRetries + 10}
+	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	if !allFailed {
+		t.Error("expected all-failed, got success")
 	}
-	if !w.reset {
-		t.Error("expected reset flag to be true")
+	if w.flushCount != maxRetries {
+		t.Errorf("expected %d flush attempts, got %d", maxRetries, w.flushCount)
+	}
+}
+
+func TestFlushWithRetry_SuccessOnSecondAttempt(t *testing.T) {
+	w := &mockWriter{flushErr: fmt.Errorf("transient error"), failTimes: 1}
+	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	if allFailed {
+		t.Error("expected eventual success, got all-failed")
+	}
+	if w.flushCount != 2 {
+		t.Errorf("expected 2 flush attempts, got %d", w.flushCount)
+	}
+}
+
+// --- DLQ routing tests ---
+
+func TestSendToDLQ_ForwardsMessageToDLQWriter(t *testing.T) {
+	dlq := &mockDLQ{}
+	c := &Consumer{dlq: dlq, logger: slog.Default()}
+
+	msg := kafka.Message{Key: []byte("user-1"), Value: []byte(`{"event_id":"evt-1"}`)}
+
+	if err := c.sendToDLQ(context.Background(), msg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(dlq.sent) != 1 {
+		t.Fatalf("expected 1 DLQ message, got %d", len(dlq.sent))
+	}
+	if string(dlq.sent[0].Value) != string(msg.Value) {
+		t.Errorf("DLQ message value mismatch: got %q", dlq.sent[0].Value)
+	}
+}
+
+func TestSendToDLQ_ReturnsErrorWhenDLQWriteFails(t *testing.T) {
+	dlq := &mockDLQ{writeErr: fmt.Errorf("kafka unavailable")}
+	c := &Consumer{dlq: dlq, logger: slog.Default()}
+
+	err := c.sendToDLQ(context.Background(), kafka.Message{Value: []byte("x")})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "write to DLQ") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

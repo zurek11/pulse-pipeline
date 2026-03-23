@@ -23,11 +23,17 @@ type Writer interface {
 	Reset()
 }
 
+// dlqSender is the interface for writing messages to the Dead Letter Queue.
+type dlqSender interface {
+	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+	Close() error
+}
+
 // Consumer reads events from a Kafka topic, batches them, and writes to MongoDB.
 // On flush failure it retries up to maxRetries times, then routes the batch to DLQ.
 type Consumer struct {
 	reader     *kafka.Reader
-	dlq        *kafka.Writer
+	dlq        dlqSender
 	writer     Writer
 	logger     *slog.Logger
 	batchSize  int
@@ -35,11 +41,15 @@ type Consumer struct {
 }
 
 // NewConsumer creates a Consumer wired to the given topic, DLQ, and writer.
+// batchSize controls how many events to accumulate before flushing.
+// flushEvery controls the maximum time between flushes regardless of batch size.
 func NewConsumer(
 	brokers []string,
 	topic, groupID, dlqTopic string,
 	writer Writer,
 	logger *slog.Logger,
+	batchSize int,
+	flushEvery time.Duration,
 ) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
@@ -61,8 +71,8 @@ func NewConsumer(
 		dlq:        dlqWriter,
 		writer:     writer,
 		logger:     logger,
-		batchSize:  100,
-		flushEvery: time.Second,
+		batchSize:  batchSize,
+		flushEvery: flushEvery,
 	}
 }
 
@@ -85,26 +95,10 @@ func (c *Consumer) Start(ctx context.Context) error {
 			return
 		}
 
-		var lastErr error
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			_, err := c.writer.Flush(ctx)
-			if err == nil {
-				lastErr = nil
-				break
-			}
-			lastErr = err
-			c.logger.Warn("flush failed, retrying",
-				"attempt", attempt,
-				"max_attempts", maxRetries,
-				"error", err,
-			)
-		}
-
-		if lastErr != nil {
+		if flushWithRetry(ctx, c.writer, c.logger) {
 			// All retries exhausted — route batch to DLQ and clear writer buffer.
 			c.logger.Error("flush failed after all retries, routing to DLQ",
 				"batch_size", len(batch),
-				"error", lastErr,
 			)
 			c.writer.Reset()
 			for _, item := range batch {
@@ -194,6 +188,23 @@ func (c *Consumer) Close() error {
 		return fmt.Errorf("close dlq writer: %w", err)
 	}
 	return nil
+}
+
+// flushWithRetry attempts to flush the writer up to maxRetries times.
+// Returns true if all attempts failed.
+func flushWithRetry(ctx context.Context, writer Writer, logger *slog.Logger) bool {
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if _, err := writer.Flush(ctx); err == nil {
+			return false
+		} else {
+			logger.Warn("flush failed, retrying",
+				"attempt", attempt,
+				"max_attempts", maxRetries,
+				"error", err,
+			)
+		}
+	}
+	return true
 }
 
 // parseMessage deserialises a Kafka message into an Event and stamps ProcessedAt.

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -44,6 +45,18 @@ func main() {
 	if metricsAddr == "" {
 		metricsAddr = ":8081"
 	}
+	batchSize := 100
+	if v := os.Getenv("CONSUMER_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			batchSize = n
+		}
+	}
+	flushInterval := time.Second
+	if v := os.Getenv("CONSUMER_FLUSH_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			flushInterval = d
+		}
+	}
 
 	// --- MongoDB ---
 	ctx := context.Background()
@@ -64,8 +77,15 @@ func main() {
 		dlqTopic,
 		writer,
 		logger,
+		batchSize,
+		flushInterval,
 	)
-	logger.Info("kafka consumer created", "topic", topic, "group", groupID)
+	logger.Info("kafka consumer created",
+		"topic", topic,
+		"group", groupID,
+		"batch_size", batchSize,
+		"flush_interval", flushInterval,
+	)
 
 	// --- Health server ---
 	mux := http.NewServeMux()

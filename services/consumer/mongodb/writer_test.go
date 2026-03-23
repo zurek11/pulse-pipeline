@@ -3,6 +3,9 @@ package mongodb
 import (
 	"log/slog"
 	"testing"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // Tests cover buffer management logic only (no real MongoDB connection needed).
@@ -46,6 +49,46 @@ func TestBulkWriter_Flush_EmptyBuffer(t *testing.T) {
 	}
 	if inserted != 0 {
 		t.Errorf("expected 0 inserted, got %d", inserted)
+	}
+}
+
+func TestBulkWriter_Add_BuildsIdempotentUpsertModel(t *testing.T) {
+	w := NewBulkWriter(nil, slog.Default())
+	w.Add(bson.M{"event_id": "evt-1", "customer_id": "user-1"}, "evt-1")
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if len(w.models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(w.models))
+	}
+
+	m, ok := w.models[0].(*mongo.UpdateOneModel)
+	if !ok {
+		t.Fatal("expected *mongo.UpdateOneModel")
+	}
+
+	// Filter must use event_id for deduplication.
+	filter, ok := m.Filter.(bson.M)
+	if !ok {
+		t.Fatal("expected bson.M filter")
+	}
+	if filter["event_id"] != "evt-1" {
+		t.Errorf("expected filter event_id=evt-1, got %v", filter["event_id"])
+	}
+
+	// Update must use $setOnInsert — not $set — so duplicates are never overwritten.
+	update, ok := m.Update.(bson.M)
+	if !ok {
+		t.Fatal("expected bson.M update")
+	}
+	if _, ok := update["$setOnInsert"]; !ok {
+		t.Error("expected $setOnInsert in update for idempotency — $set would overwrite duplicates")
+	}
+
+	// Upsert must be true so new events are inserted when not found.
+	if m.Upsert == nil || !*m.Upsert {
+		t.Error("expected Upsert=true")
 	}
 }
 
