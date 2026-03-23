@@ -21,6 +21,36 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.3.0] - 2026-03-23
+
+### Phase 3: Event Processing 🔄
+
+**Goal:** Consumer reads from Kafka and writes to MongoDB with idempotency.
+
+### Added
+
+- **`services/consumer/models/event.go`** — `Event` and `EventContext` structs with `bson` tags and a `ProcessedAt` timestamp field
+- **`services/consumer/mongodb/client.go`** — `Connect()`: establishes MongoDB connection, pings, and creates three indexes on startup:
+  - `event_id` (unique) — deduplication guarantee
+  - `(customer_id, timestamp desc)` — customer timeline queries
+  - `(event_type, timestamp desc)` — event type filtering
+- **`services/consumer/mongodb/writer.go`** — `BulkWriter` with idempotent upserts (`$setOnInsert` on `event_id`), unordered bulk writes, and `Add / Flush / Len / Reset` API
+- **`services/consumer/kafka/consumer.go`** — `Consumer` batch loop:
+  - Accumulates up to 100 messages or flushes every 1 second (whichever comes first)
+  - Retries MongoDB flush up to 3 times on error
+  - Routes failed batches and unparseable messages to `pulse.events.dlq.v1`
+  - Commits Kafka offsets only after successful flush or DLQ routing (at-least-once delivery)
+  - Graceful shutdown: flushes remaining buffer before returning
+- **`services/consumer/mongodb/writer_test.go`** — 4 tests for buffer management (Add, Len, Reset, empty Flush)
+- **`services/consumer/kafka/consumer_test.go`** — 5 tests covering `parseMessage` (valid, invalid JSON, empty payload) and mock writer behaviour
+
+### Changed
+
+- **`services/consumer/main.go`** — fully wired: MongoDB connection + index setup, `BulkWriter`, `Consumer` loop in goroutine, graceful shutdown sequence (consumer → Kafka → HTTP server → MongoDB disconnect)
+- **`services/consumer/go.mod`** — added `github.com/segmentio/kafka-go v0.4.50` and `go.mongodb.org/mongo-driver v1.17.9`
+
+---
+
 ## [0.2.0] - 2026-03-23
 
 ### Phase 2: Event Ingestion 📥
@@ -89,6 +119,7 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zurek11/pulse-pipeline/releases/tag/v0.1.0

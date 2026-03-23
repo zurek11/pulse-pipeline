@@ -7,24 +7,72 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	consumerkafka "github.com/zurek11/pulse-pipeline/services/consumer/kafka"
+	"github.com/zurek11/pulse-pipeline/services/consumer/mongodb"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("consumer starting")
 
+	// --- Config from environment ---
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		brokers = "localhost:9092"
+	}
+	topic := os.Getenv("KAFKA_TOPIC")
+	if topic == "" {
+		topic = "pulse.events.v1"
+	}
+	dlqTopic := os.Getenv("KAFKA_DLQ_TOPIC")
+	if dlqTopic == "" {
+		dlqTopic = "pulse.events.dlq.v1"
+	}
+	groupID := os.Getenv("KAFKA_GROUP_ID")
+	if groupID == "" {
+		groupID = "pulse-consumer-group"
+	}
+	mongoURI := os.Getenv("MONGO_URI")
+	if mongoURI == "" {
+		mongoURI = "mongodb://localhost:27017"
+	}
+	metricsAddr := os.Getenv("METRICS_ADDR")
+	if metricsAddr == "" {
+		metricsAddr = ":8081"
+	}
+
+	// --- MongoDB ---
+	ctx := context.Background()
+	mongoClient, collection, err := mongodb.Connect(ctx, mongoURI, "pulse", "events")
+	if err != nil {
+		logger.Error("failed to connect to mongodb", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("mongodb connected", "uri", mongoURI)
+
+	writer := mongodb.NewBulkWriter(collection, logger)
+
+	// --- Kafka consumer ---
+	consumer := consumerkafka.NewConsumer(
+		strings.Split(brokers, ","),
+		topic,
+		groupID,
+		dlqTopic,
+		writer,
+		logger,
+	)
+	logger.Info("kafka consumer created", "topic", topic, "group", groupID)
+
+	// --- Health server ---
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
-
-	metricsAddr := os.Getenv("METRICS_ADDR")
-	if metricsAddr == "" {
-		metricsAddr = ":8081"
-	}
 
 	server := &http.Server{
 		Addr:         metricsAddr,
@@ -37,21 +85,48 @@ func main() {
 	go func() {
 		logger.Info("health server starting", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
+			logger.Error("health server error", "error", err)
 		}
 	}()
 
+	// --- Consumer loop ---
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+
+	consumerDone := make(chan struct{})
+	go func() {
+		defer close(consumerDone)
+		if err := consumer.Start(consumerCtx); err != nil {
+			logger.Error("consumer error", "error", err)
+		}
+	}()
+
+	// --- Graceful shutdown ---
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 
 	logger.Info("shutdown signal received", "signal", sig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// 1. Stop consumer loop (flushes remaining buffer internally).
+	consumerCancel()
+	<-consumerDone
+	logger.Info("consumer stopped")
 
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("server shutdown error", "error", err)
+	// 2. Close Kafka connections.
+	if err := consumer.Close(); err != nil {
+		logger.Error("consumer close error", "error", err)
+	}
+
+	// 3. Stop health server.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("health server shutdown error", "error", err)
+	}
+
+	// 4. Disconnect MongoDB.
+	if err := mongoClient.Disconnect(shutdownCtx); err != nil {
+		logger.Error("mongodb disconnect error", "error", err)
 	}
 
 	logger.Info("consumer stopped gracefully")

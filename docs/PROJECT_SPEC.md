@@ -337,7 +337,7 @@ CLUSTER BY customer_id, event_type;
 - [x] Request ID middleware
 - [x] Panic recovery middleware
 - [x] Unit tests: event validation (table-driven), handler tests with mock Kafka
-- [ ] Verify: send event via curl, see it in Kafka topic (use `kafka-console-consumer`)
+- [x] Verify: send event via curl, see it in Kafka topic (use `kafka-console-consumer`)
 
 **Acceptance:** Events flow from HTTP → Kafka. Invalid events return 400 with clear message. ✅ — released as v0.2.0
 
