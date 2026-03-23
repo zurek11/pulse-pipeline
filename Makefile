@@ -1,10 +1,13 @@
-.PHONY: up down logs test lint build load-test seed clean
+.PHONY: up down rebuild logs test lint build load-test seed clean
 
 up:
 	docker compose up -d
 
 down:
 	docker compose down
+
+rebuild:
+	docker compose up -d --build api consumer
 
 logs:
 	docker compose logs -f api consumer

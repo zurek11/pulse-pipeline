@@ -1,0 +1,156 @@
+### Health check
+GET http://localhost:8080/health
+
+###
+
+### Track — page_view
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-123",
+  "event_type": "page_view",
+  "properties": {
+    "page": "/home",
+    "referrer": "google.com"
+  },
+  "context": {
+    "device": "mobile",
+    "session_id": "sess-abc"
+  }
+}
+
+###
+
+### Track — purchase
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-123",
+  "event_type": "purchase",
+  "properties": {
+    "product_id": "prod-456",
+    "price": 89.99,
+    "currency": "EUR"
+  }
+}
+
+###
+
+### Track — click
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-456",
+  "event_type": "click",
+  "properties": {
+    "element": "buy-now-button",
+    "page": "/products/winter-jacket"
+  }
+}
+
+###
+
+### Track — add_to_cart
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-456",
+  "event_type": "add_to_cart",
+  "properties": {
+    "product_id": "prod-789",
+    "quantity": 2
+  }
+}
+
+###
+
+### Track — search
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-789",
+  "event_type": "search",
+  "properties": {
+    "query": "winter jacket",
+    "results_count": 42
+  }
+}
+
+###
+
+### Track — custom
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-789",
+  "event_type": "custom",
+  "properties": {
+    "action": "newsletter_signup",
+    "source": "footer"
+  }
+}
+
+###
+
+### Track — with explicit event_id (deduplication test)
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "event_id": "evt_dedup-test-001",
+  "customer_id": "user-123",
+  "event_type": "page_view",
+  "properties": {
+    "page": "/checkout"
+  }
+}
+
+###
+
+### ERROR — missing customer_id (expect 400)
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "event_type": "page_view"
+}
+
+###
+
+### ERROR — invalid event_type (expect 400)
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-123",
+  "event_type": "invalid_type"
+}
+
+###
+
+### ERROR — missing event_type (expect 400)
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "customer_id": "user-123"
+}
+
+###
+
+### Batch — placeholder for Phase 4
+# POST http://localhost:8080/api/v1/track/batch
+# Content-Type: application/json
+#
+# {
+#   "events": [
+#     { "customer_id": "user-1", "event_type": "page_view" },
+#     { "customer_id": "user-2", "event_type": "click" }
+#   ]
+# }
