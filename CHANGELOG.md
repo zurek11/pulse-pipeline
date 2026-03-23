@@ -21,6 +21,41 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.2.0] - 2026-03-23
+
+### Phase 2: Event Ingestion 📥
+
+**Goal:** API accepts events, validates them, and produces to Kafka.
+
+### Added
+
+- **`services/api/models/event.go`** — `Event` and `EventContext` structs with full validation:
+  - `customer_id`: required, max 256 chars
+  - `event_type`: required, must be one of `page_view`, `click`, `purchase`, `add_to_cart`, `search`, `custom`
+  - `properties`: optional, max 50 keys, values must be string/number/boolean
+  - `SetDefaults()`: generates `evt_<uuid>` if `event_id` missing, fills `timestamp` and `received_at`
+- **`services/api/kafka/producer.go`** — Kafka producer wrapper using `segmentio/kafka-go`:
+  - Hash partitioning on `customer_id` key for per-customer ordering
+  - `RequireAll` acks for durability
+  - `MaxAttempts: 3` with graceful `Close()`
+- **`services/api/handlers/track.go`** — `POST /api/v1/track` endpoint:
+  - 64 KB request body limit
+  - Returns `202 Accepted` with `{ "status": "accepted", "event_id": "..." }`
+  - Returns `400 Bad Request` with clear validation messages
+  - Returns `500 Internal Server Error` on Kafka produce failure
+  - `KafkaProducer` interface defined at point of use for testability
+- **`services/api/middleware/request_id.go`** — generates 8-byte hex request ID, stores in context, sets `X-Request-ID` response header
+- **`services/api/middleware/recovery.go`** — catches panics, logs stack trace, returns `500` JSON response
+- **`services/api/models/event_test.go`** — 12 table-driven tests for event validation and `SetDefaults`
+- **`services/api/handlers/track_test.go`** — 5 handler tests covering happy path, validation errors, wrong method, Kafka error, and preserved event ID
+
+### Changed
+
+- **`services/api/main.go`** — wired Kafka producer, `TrackHandler`, and middleware chain; graceful shutdown now closes producer
+- **`services/api/go.mod`** — added `github.com/segmentio/kafka-go v0.4.50`
+
+---
+
 ## [0.1.0] - 2026-03-22
 
 ### Phase 1: Foundation 🏗️
@@ -54,5 +89,6 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zurek11/pulse-pipeline/releases/tag/v0.1.0
