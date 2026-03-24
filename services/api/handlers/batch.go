@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -24,14 +25,20 @@ type batchResponse struct {
 	EventIDs []string `json:"event_ids"`
 }
 
+// batchProducer is the interface BatchHandler uses to write events to Kafka.
+// Defined at point of use — implemented by kafka.Producer.
+type batchProducer interface {
+	ProduceBatch(ctx context.Context, events []*models.Event) error
+}
+
 // BatchHandler handles POST /api/v1/track/batch.
 type BatchHandler struct {
-	producer KafkaProducer
+	producer batchProducer
 	logger   *slog.Logger
 }
 
 // NewBatchHandler constructs a BatchHandler with the given producer and logger.
-func NewBatchHandler(producer KafkaProducer, logger *slog.Logger) *BatchHandler {
+func NewBatchHandler(producer batchProducer, logger *slog.Logger) *BatchHandler {
 	return &BatchHandler{producer: producer, logger: logger}
 }
 
@@ -85,20 +92,24 @@ func (h *BatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Produce all events to Kafka.
-	eventIDs := make([]string, 0, len(req.Events))
+	// Produce all events in a single Kafka round-trip.
+	ptrs := make([]*models.Event, len(req.Events))
 	for i := range req.Events {
-		if err := h.producer.Produce(ctx, req.Events[i].CustomerID, &req.Events[i]); err != nil {
-			h.logger.ErrorContext(ctx, "failed to produce batch event",
-				"request_id", requestID,
-				"index", i,
-				"event_id", req.Events[i].EventID,
-				"error", err,
-			)
-			h.writeError(w, http.StatusInternalServerError, "failed to produce to Kafka")
-			return
-		}
-		eventIDs = append(eventIDs, req.Events[i].EventID)
+		ptrs[i] = &req.Events[i]
+	}
+	if err := h.producer.ProduceBatch(ctx, ptrs); err != nil {
+		h.logger.ErrorContext(ctx, "failed to produce batch",
+			"request_id", requestID,
+			"count", len(ptrs),
+			"error", err,
+		)
+		h.writeError(w, http.StatusInternalServerError, "failed to produce to Kafka")
+		return
+	}
+
+	eventIDs := make([]string, len(req.Events))
+	for i := range req.Events {
+		eventIDs[i] = req.Events[i].EventID
 	}
 
 	h.logger.InfoContext(ctx, "batch accepted",

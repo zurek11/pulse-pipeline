@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/segmentio/kafka-go"
+
+	"github.com/zurek11/pulse-pipeline/services/api/models"
 )
 
 // Producer wraps kafka-go Writer with structured logging.
@@ -47,6 +49,27 @@ func (p *Producer) Produce(ctx context.Context, key string, value interface{}) e
 	}
 
 	p.logger.DebugContext(ctx, "event produced", "key", key, "topic", p.writer.Topic)
+	return nil
+}
+
+// ProduceBatch serialises all events and writes them to Kafka in a single
+// WriteMessages call — one round-trip regardless of batch size.
+func (p *Producer) ProduceBatch(ctx context.Context, events []*models.Event) error {
+	msgs := make([]kafka.Message, len(events))
+	for i, e := range events {
+		data, err := json.Marshal(e)
+		if err != nil {
+			return fmt.Errorf("marshal event %d: %w", i, err)
+		}
+		msgs[i] = kafka.Message{
+			Key:   []byte(e.CustomerID),
+			Value: data,
+		}
+	}
+	if err := p.writer.WriteMessages(ctx, msgs...); err != nil {
+		return fmt.Errorf("write batch to kafka: %w", err)
+	}
+	p.logger.DebugContext(ctx, "batch produced", "count", len(events), "topic", p.writer.Topic)
 	return nil
 }
 
