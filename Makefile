@@ -31,6 +31,6 @@ load-test:
 seed:
 	./scripts/seed-events.sh
 
-clean:
+clean: ## WARNING: destroys all volumes (MongoDB data, Kafka, Grafana, Prometheus)
 	docker compose down -v
 	rm -rf bin/

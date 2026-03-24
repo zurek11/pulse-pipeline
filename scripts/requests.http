@@ -152,7 +152,7 @@ Content-Type: application/json
 
 ### [P3-1] Consumer health check
 # Expect: { "status": "ok" }
-GET http://localhost:8081/health
+GET http://localhost:8083/health
 
 ###
 
