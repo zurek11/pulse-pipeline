@@ -11,7 +11,7 @@ import (
 // Tests cover buffer management logic only (no real MongoDB connection needed).
 
 func TestBulkWriter_Add_AccumulatesModels(t *testing.T) {
-	w := NewBulkWriter(nil, slog.Default())
+	w := NewBulkWriter(nil, slog.Default(), nil)
 
 	if w.Len() != 0 {
 		t.Fatalf("expected empty buffer, got %d", w.Len())
@@ -27,7 +27,7 @@ func TestBulkWriter_Add_AccumulatesModels(t *testing.T) {
 }
 
 func TestBulkWriter_Reset_ClearsBuffer(t *testing.T) {
-	w := NewBulkWriter(nil, slog.Default())
+	w := NewBulkWriter(nil, slog.Default(), nil)
 
 	w.Add(map[string]string{"event_id": "evt-1"}, "evt-1")
 	w.Add(map[string]string{"event_id": "evt-2"}, "evt-2")
@@ -40,7 +40,7 @@ func TestBulkWriter_Reset_ClearsBuffer(t *testing.T) {
 }
 
 func TestBulkWriter_Flush_EmptyBuffer(t *testing.T) {
-	w := NewBulkWriter(nil, slog.Default())
+	w := NewBulkWriter(nil, slog.Default(), nil)
 
 	// Flushing an empty buffer should be a no-op (no panic, returns 0).
 	inserted, err := w.Flush(nil) //nolint:staticcheck // nil ctx is fine for empty buffer path
@@ -53,7 +53,7 @@ func TestBulkWriter_Flush_EmptyBuffer(t *testing.T) {
 }
 
 func TestBulkWriter_Add_BuildsIdempotentUpsertModel(t *testing.T) {
-	w := NewBulkWriter(nil, slog.Default())
+	w := NewBulkWriter(nil, slog.Default(), nil)
 	w.Add(bson.M{"event_id": "evt-1", "customer_id": "user-1"}, "evt-1")
 
 	w.mu.Lock()
@@ -93,7 +93,7 @@ func TestBulkWriter_Add_BuildsIdempotentUpsertModel(t *testing.T) {
 }
 
 func TestBulkWriter_Reset_AfterFlushError_AllowsRetry(t *testing.T) {
-	w := NewBulkWriter(nil, slog.Default())
+	w := NewBulkWriter(nil, slog.Default(), nil)
 
 	w.Add(map[string]string{"event_id": "evt-1"}, "evt-1")
 

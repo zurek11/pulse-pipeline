@@ -9,6 +9,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
+	"github.com/zurek11/pulse-pipeline/services/consumer/metrics"
 	"github.com/zurek11/pulse-pipeline/services/consumer/models"
 )
 
@@ -36,11 +37,13 @@ type Consumer struct {
 	dlq        dlqSender
 	writer     Writer
 	logger     *slog.Logger
+	metrics    *metrics.Consumer
 	batchSize  int
 	flushEvery time.Duration
 }
 
-// NewConsumer creates a Consumer wired to the given topic, DLQ, and writer.
+// NewConsumer creates a Consumer wired to the given topic, DLQ, writer, and metrics.
+// Pass nil for metrics to disable instrumentation (e.g. in tests).
 // batchSize controls how many events to accumulate before flushing.
 // flushEvery controls the maximum time between flushes regardless of batch size.
 func NewConsumer(
@@ -48,6 +51,7 @@ func NewConsumer(
 	topic, groupID, dlqTopic string,
 	writer Writer,
 	logger *slog.Logger,
+	m *metrics.Consumer,
 	batchSize int,
 	flushEvery time.Duration,
 ) *Consumer {
@@ -71,6 +75,7 @@ func NewConsumer(
 		dlq:        dlqWriter,
 		writer:     writer,
 		logger:     logger,
+		metrics:    m,
 		batchSize:  batchSize,
 		flushEvery: flushEvery,
 	}
@@ -95,7 +100,11 @@ func (c *Consumer) Start(ctx context.Context) error {
 			return
 		}
 
-		if flushWithRetry(ctx, c.writer, c.logger) {
+		if c.metrics != nil {
+			c.metrics.BufferSize.Set(float64(len(batch)))
+		}
+
+		if flushWithRetry(ctx, c.writer, c.logger, c.metrics) {
 			// All retries exhausted — route batch to DLQ and clear writer buffer.
 			c.logger.Error("flush failed after all retries, routing to DLQ",
 				"batch_size", len(batch),
@@ -108,6 +117,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 						"offset", item.msg.Offset,
 						"error", err,
 					)
+				} else if c.metrics != nil {
+					c.metrics.DLQTotal.Inc()
 				}
 			}
 		}
@@ -121,6 +132,9 @@ func (c *Consumer) Start(ctx context.Context) error {
 			c.logger.Error("commit offsets failed", "error", err)
 		}
 
+		if c.metrics != nil {
+			c.metrics.BufferSize.Set(0)
+		}
 		batch = batch[:0]
 	}
 
@@ -156,6 +170,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 				)
 				if dlqErr := c.sendToDLQ(ctx, msg); dlqErr != nil {
 					c.logger.Error("failed to send to DLQ", "error", dlqErr)
+				} else if c.metrics != nil {
+					c.metrics.DLQTotal.Inc()
 				}
 				if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
 					c.logger.Error("commit offset failed", "error", commitErr)
@@ -165,6 +181,11 @@ func (c *Consumer) Start(ctx context.Context) error {
 
 			c.writer.Add(event, event.EventID)
 			batch = append(batch, batchItem{msg: msg, event: event})
+
+			if c.metrics != nil {
+				c.metrics.EventsConsumed.WithLabelValues(event.EventType).Inc()
+				c.metrics.BufferSize.Set(float64(len(batch)))
+			}
 
 			c.logger.DebugContext(ctx, "event buffered",
 				"event_id", event.EventID,
@@ -192,17 +213,23 @@ func (c *Consumer) Close() error {
 
 // flushWithRetry attempts to flush the writer up to maxRetries times.
 // Returns true if all attempts failed.
-func flushWithRetry(ctx context.Context, writer Writer, logger *slog.Logger) bool {
+func flushWithRetry(ctx context.Context, writer Writer, logger *slog.Logger, m *metrics.Consumer) bool {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if _, err := writer.Flush(ctx); err == nil {
+		_, err := writer.Flush(ctx)
+		if err == nil {
+			if m != nil {
+				m.WritesTotal.WithLabelValues("success").Inc()
+			}
 			return false
-		} else {
-			logger.Warn("flush failed, retrying",
-				"attempt", attempt,
-				"max_attempts", maxRetries,
-				"error", err,
-			)
 		}
+		logger.Warn("flush failed, retrying",
+			"attempt", attempt,
+			"max_attempts", maxRetries,
+			"error", err,
+		)
+	}
+	if m != nil {
+		m.WritesTotal.WithLabelValues("error").Inc()
 	}
 	return true
 }

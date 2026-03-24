@@ -12,7 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	consumerkafka "github.com/zurek11/pulse-pipeline/services/consumer/kafka"
+	"github.com/zurek11/pulse-pipeline/services/consumer/metrics"
 	"github.com/zurek11/pulse-pipeline/services/consumer/mongodb"
 )
 
@@ -43,7 +48,7 @@ func main() {
 	}
 	metricsAddr := os.Getenv("METRICS_ADDR")
 	if metricsAddr == "" {
-		metricsAddr = ":8081"
+		metricsAddr = ":8083"
 	}
 	batchSize := 100
 	if v := os.Getenv("CONSUMER_BATCH_SIZE"); v != "" {
@@ -58,6 +63,11 @@ func main() {
 		}
 	}
 
+	// --- Metrics ---
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	m := metrics.NewConsumer(reg)
+
 	// --- MongoDB ---
 	ctx := context.Background()
 	mongoClient, collection, err := mongodb.Connect(ctx, mongoURI, "pulse", "events")
@@ -67,7 +77,7 @@ func main() {
 	}
 	logger.Info("mongodb connected", "uri", mongoURI)
 
-	writer := mongodb.NewBulkWriter(collection, logger)
+	writer := mongodb.NewBulkWriter(collection, logger, m)
 
 	// --- Kafka consumer ---
 	consumer := consumerkafka.NewConsumer(
@@ -77,6 +87,7 @@ func main() {
 		dlqTopic,
 		writer,
 		logger,
+		m,
 		batchSize,
 		flushInterval,
 	)
@@ -87,12 +98,13 @@ func main() {
 		"flush_interval", flushInterval,
 	)
 
-	// --- Health server ---
+	// --- Health + metrics server ---
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	server := &http.Server{
 		Addr:         metricsAddr,
@@ -137,7 +149,7 @@ func main() {
 		logger.Error("consumer close error", "error", err)
 	}
 
-	// 3. Stop health server.
+	// 3. Stop health/metrics server.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {

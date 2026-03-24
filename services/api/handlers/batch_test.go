@@ -11,7 +11,7 @@ import (
 
 func TestBatchHandler_success(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewBatchHandler(mp, noopLogger())
+	h := NewBatchHandler(mp, noopLogger(), nil)
 
 	body := `{"events":[
 		{"customer_id":"user-1","event_type":"page_view"},
@@ -85,7 +85,7 @@ func TestBatchHandler_validationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mp := &mockProducer{}
-			h := NewBatchHandler(mp, noopLogger())
+			h := NewBatchHandler(mp, noopLogger(), nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/track/batch", strings.NewReader(tt.body))
 			rec := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestBatchHandler_validationErrors(t *testing.T) {
 
 func TestBatchHandler_exceedsMaxSize(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewBatchHandler(mp, noopLogger())
+	h := NewBatchHandler(mp, noopLogger(), nil)
 
 	// Build a batch of 101 events.
 	events := make([]string, 101)
@@ -139,7 +139,7 @@ func TestBatchHandler_exceedsMaxSize(t *testing.T) {
 }
 
 func TestBatchHandler_wrongMethod(t *testing.T) {
-	h := NewBatchHandler(&mockProducer{}, noopLogger())
+	h := NewBatchHandler(&mockProducer{}, noopLogger(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/track/batch", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -150,7 +150,7 @@ func TestBatchHandler_wrongMethod(t *testing.T) {
 
 func TestBatchHandler_kafkaError(t *testing.T) {
 	mp := &mockProducer{produceErr: fmt.Errorf("kafka down")}
-	h := NewBatchHandler(mp, noopLogger())
+	h := NewBatchHandler(mp, noopLogger(), nil)
 
 	body := `{"events":[{"customer_id":"user-1","event_type":"page_view"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/track/batch", strings.NewReader(body))
@@ -165,7 +165,7 @@ func TestBatchHandler_kafkaError(t *testing.T) {
 
 func TestBatchHandler_preservesProvidedEventIDs(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewBatchHandler(mp, noopLogger())
+	h := NewBatchHandler(mp, noopLogger(), nil)
 
 	body := `{"events":[
 		{"event_id":"evt_custom-1","customer_id":"user-1","event_type":"page_view"},

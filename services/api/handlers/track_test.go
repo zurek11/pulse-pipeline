@@ -35,7 +35,7 @@ func (m *mockProducer) ProduceBatch(_ context.Context, events []*models.Event) e
 
 func TestTrackHandler_success(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewTrackHandler(mp, noopLogger())
+	h := NewTrackHandler(mp, noopLogger(), nil)
 
 	body := `{"customer_id":"user-1","event_type":"page_view"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/track", strings.NewReader(body))
@@ -102,7 +102,7 @@ func TestTrackHandler_validationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mp := &mockProducer{}
-			h := NewTrackHandler(mp, noopLogger())
+			h := NewTrackHandler(mp, noopLogger(), nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/track", strings.NewReader(tt.body))
 			rec := httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestTrackHandler_validationErrors(t *testing.T) {
 
 func TestTrackHandler_wrongMethod(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewTrackHandler(mp, noopLogger())
+	h := NewTrackHandler(mp, noopLogger(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/track", nil)
 	rec := httptest.NewRecorder()
@@ -146,7 +146,7 @@ func TestTrackHandler_wrongMethod(t *testing.T) {
 
 func TestTrackHandler_kafkaError(t *testing.T) {
 	mp := &mockProducer{produceErr: fmt.Errorf("broker unavailable")}
-	h := NewTrackHandler(mp, noopLogger())
+	h := NewTrackHandler(mp, noopLogger(), nil)
 
 	body := `{"customer_id":"user-1","event_type":"click"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/track", strings.NewReader(body))
@@ -169,7 +169,7 @@ func TestTrackHandler_kafkaError(t *testing.T) {
 
 func TestTrackHandler_preservesProvidedEventID(t *testing.T) {
 	mp := &mockProducer{}
-	h := NewTrackHandler(mp, noopLogger())
+	h := NewTrackHandler(mp, noopLogger(), nil)
 
 	body := `{"customer_id":"user-1","event_type":"search","event_id":"evt_custom-123"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/track", strings.NewReader(body))

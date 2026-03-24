@@ -9,7 +9,7 @@ scrape_configs:
 
   - job_name: "pulse-consumer"
     static_configs:
-      - targets: ["consumer:8081"]
+      - targets: ["consumer:8083"]
 
   - job_name: "prometheus"
     static_configs:

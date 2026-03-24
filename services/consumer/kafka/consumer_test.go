@@ -103,7 +103,7 @@ func TestParseMessage_EmptyPayload(t *testing.T) {
 
 func TestFlushWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 	w := &mockWriter{}
-	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	allFailed := flushWithRetry(context.Background(), w, slog.Default(), nil)
 	if allFailed {
 		t.Error("expected success, got all-failed")
 	}
@@ -114,7 +114,7 @@ func TestFlushWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 
 func TestFlushWithRetry_AllRetriesExhausted(t *testing.T) {
 	w := &mockWriter{flushErr: fmt.Errorf("mongodb unavailable"), failTimes: maxRetries + 10}
-	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	allFailed := flushWithRetry(context.Background(), w, slog.Default(), nil)
 	if !allFailed {
 		t.Error("expected all-failed, got success")
 	}
@@ -125,7 +125,7 @@ func TestFlushWithRetry_AllRetriesExhausted(t *testing.T) {
 
 func TestFlushWithRetry_SuccessOnSecondAttempt(t *testing.T) {
 	w := &mockWriter{flushErr: fmt.Errorf("transient error"), failTimes: 1}
-	allFailed := flushWithRetry(context.Background(), w, slog.Default())
+	allFailed := flushWithRetry(context.Background(), w, slog.Default(), nil)
 	if allFailed {
 		t.Error("expected eventual success, got all-failed")
 	}
