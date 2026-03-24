@@ -21,6 +21,29 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [1.0.0] - 2026-03-24
+
+### Phase 7: Polish + Documentation 📝
+
+**Goal:** Interview-ready README, CI pipeline, and architecture documentation.
+
+### Added
+
+- **`README.md`** — full rewrite: "How It Works" narrative for both services, "Key Design Decisions" table, ASCII GCP infrastructure diagram, Grafana dashboard panel reference, load test results with numbers, updated project structure tree, tech stack with "Why" column, services-at-a-glance table
+- **`docs/decisions.md`** — single-file ADR covering 10 architectural decisions: Kafka partition key, Kafka client choice, async producer, MongoDB `$setOnInsert` idempotency, offset commit timing, DLQ strategy, custom Prometheus registry, dual-condition buffer flush, GKE vs Cloud Run, BigQuery partitioning + clustering
+- **`.github/workflows/ci.yml`** — GitHub Actions CI pipeline with 4 jobs run in parallel:
+  - `test` — `go test -v -race -count=1 ./...` for both services
+  - `lint` — `golangci-lint-action@v6` for both services
+  - `build` — `docker build` for both services, tagged with commit SHA
+  - `terraform` — `terraform init -backend=false` + `terraform validate`
+- **`docs/assets/`** — placeholder directory for Grafana dashboard and load test screenshots
+
+### Changed
+
+- **`docs/PROJECT_SPEC.md`** — removed duplicate "async API ingestion" item from Phase 7 (already delivered in Phase 5); updated Phase 7 goals to match actual scope
+
+---
+
 ## [0.6.0] - 2026-03-24
 
 ### Phase 6: GCP Infrastructure 🏗️☁️
@@ -219,7 +242,8 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...v0.4.0

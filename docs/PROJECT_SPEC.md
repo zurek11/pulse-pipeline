@@ -392,32 +392,30 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Terraform configurations for GCP deployment (not deployed).
 
-- [ ] GKE cluster with node pool and autoscaling
-- [ ] BigQuery dataset with events table (partitioned + clustered)
-- [ ] Cloud Storage bucket for exports
-- [ ] Cloud Monitoring alert policies
-- [ ] VPC and firewall rules
-- [ ] Kubernetes manifests for API and Consumer deployments
-- [ ] `terraform validate` passes
-- [ ] Verify: `terraform plan` shows resources (with mock/dummy credentials or validate only)
+- [x] GKE cluster with node pool and autoscaling
+- [x] BigQuery dataset with events table (partitioned + clustered)
+- [x] Cloud Storage bucket for exports
+- [x] Cloud Monitoring alert policies
+- [x] VPC and firewall rules
+- [x] Kubernetes manifests for API and Consumer deployments
+- [x] `terraform validate` passes
+- [x] Verify: `terraform plan` shows resources (with mock/dummy credentials or validate only)
 
-**Acceptance:** All `.tf` files valid. K8s manifests reference correct Docker images.
+**Acceptance:** All `.tf` files valid. K8s manifests reference correct Docker images. ✅ — released as v0.6.0
 
 ---
 
 ### Phase 7: Polish + Documentation 📝
 
-**Goal:** README, CI, async API ingestion, and interview-ready presentation.
+**Goal:** Interview-ready README, CI pipeline, and architecture documentation.
 
-- [ ] Async API ingestion: return `202 Accepted` immediately after validation, produce to Kafka in a background goroutine with an internal channel buffer — decouples HTTP response time from Kafka latency so `WriteTimeout` is never a bottleneck
-- [ ] README with architecture diagram, quick start, and project structure
+- [ ] README: expanded with "how it works" narrative, key design decisions, GCP infrastructure diagram, Grafana dashboard screenshot, load test results
 - [ ] GitHub Actions CI: `go test`, `golangci-lint`, `docker build`
+- [ ] `docs/decisions.md` — single-file ADR covering all key architectural choices
 - [ ] CHANGELOG.md with all phases
-- [ ] Architecture decision records in docs/
-- [ ] Final load test results documented
 - [ ] Verify: clone from scratch, `docker compose up`, `make load-test` — everything works
 
-**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes. Load test shows no EOF errors under full concurrency.
+**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes. An interviewer reading the README understands what was built, why each decision was made, and what the results were.
 
 ---
 
