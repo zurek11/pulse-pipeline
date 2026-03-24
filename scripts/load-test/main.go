@@ -18,7 +18,7 @@ import (
 const (
 	totalEvents = 10_000
 	batchSize   = 100
-	concurrency = 20
+	concurrency = 5
 )
 
 var eventTypes = []string{"page_view", "click", "purchase", "add_to_cart", "search", "custom"}
