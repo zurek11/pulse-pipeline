@@ -347,16 +347,16 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Consumer reads from Kafka and writes to MongoDB with idempotency.
 
-- [ ] Kafka consumer wrapper with consumer group, offset management
-- [ ] MongoDB bulk writer with configurable batch size and flush interval
-- [ ] Idempotent upserts (event_id deduplication)
-- [ ] Graceful shutdown: flush buffer → commit offsets → close connections
-- [ ] DLQ for failed events (after 3 retries)
-- [ ] MongoDB indexes (create on startup)
-- [ ] Unit tests: bulk writer, idempotency, DLQ routing
-- [ ] Verify: send events, see them in MongoDB, send duplicates — no duplicate docs
+- [x] Kafka consumer wrapper with consumer group, offset management
+- [x] MongoDB bulk writer with configurable batch size and flush interval
+- [x] Idempotent upserts (event_id deduplication)
+- [x] Graceful shutdown: flush buffer → commit offsets → close connections
+- [x] DLQ for failed events (after 3 retries)
+- [x] MongoDB indexes (create on startup)
+- [x] Unit tests: bulk writer, idempotency, DLQ routing
+- [x] Verify: send events, see them in MongoDB, send duplicates — no duplicate docs
 
-**Acceptance:** Events flow from Kafka → MongoDB. Duplicates are handled. DLQ works.
+**Acceptance:** Events flow from Kafka → MongoDB. Duplicates are handled. DLQ works. ✅ — released as v0.3.0
 
 ---
 
