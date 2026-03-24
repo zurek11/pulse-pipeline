@@ -1,0 +1,105 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consumer-config
+  namespace: pulse-pipeline
+data:
+  METRICS_ADDR: ":8083"
+  KAFKA_BROKERS: "kafka:9092"           # Replace with actual Kafka endpoint.
+  KAFKA_GROUP_ID: "pulse-consumer-group"
+  KAFKA_TOPIC: "pulse.events.v1"
+  MONGO_URI: "mongodb://mongodb:27017"  # Replace with actual MongoDB URI.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulse-consumer
+  namespace: pulse-pipeline
+  labels:
+    app: pulse-consumer
+spec:
+  # Single replica is intentional: multiple consumer instances in the same
+  # consumer group would split the 3 partitions between them (parallelism),
+  # but for this learning project one instance consumes all partitions.
+  # Scale to 3 replicas to match partition count for full parallelism.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulse-consumer
+  template:
+    metadata:
+      labels:
+        app: pulse-consumer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: pulse-consumer
+      containers:
+        - name: consumer
+          image: pulse-pipeline-consumer:latest
+          ports:
+            - name: metrics
+              containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: consumer-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          # Graceful shutdown: give the consumer up to 60s to flush its buffer
+          # and commit final Kafka offsets before SIGKILL.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      terminationGracePeriodSeconds: 60
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pulse-consumer
+  namespace: pulse-pipeline
+  annotations:
+    iam.gke.io/gcp-service-account: "pulse-consumer@PROJECT_ID.iam.gserviceaccount.com"
+
+---
+# ClusterIP service exposes the consumer's /metrics endpoint to Prometheus
+# inside the cluster. No external access needed — consumers are not public-facing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulse-consumer
+  namespace: pulse-pipeline
+  labels:
+    app: pulse-consumer
+spec:
+  type: ClusterIP
+  selector:
+    app: pulse-consumer
+  ports:
+    - name: metrics
+      port: 8083
+      targetPort: 8083
