@@ -1,6 +1,6 @@
 module github.com/zurek11/pulse-pipeline/services/api
 
-go 1.26
+go 1.25.0
 
 require (
 	github.com/prometheus/client_golang v1.23.2
