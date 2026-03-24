@@ -292,10 +292,7 @@ Grafana dashboard is auto-provisioned on `docker compose up` — no manual setup
 
 ### Dashboard Screenshot
 
-> 📸 **Placeholder** — replace `docs/assets/grafana-dashboard.png` with a real screenshot.
-> To capture: run `docker compose up -d && make load-test`, then open http://localhost:3000.
-
-![Grafana Dashboard](docs/assets/grafana-dashboard.png)
+![Grafana Dashboard](docs/assets/grafana_dashboard.png)
 
 **8 panels:**
 
@@ -320,26 +317,10 @@ Run it yourself: `make load-test` (requires `docker compose up -d`)
 
 ### Results Screenshot
 
-> 📸 **Placeholder** — replace `docs/assets/load-test-results.png` with a real screenshot.
-> To capture: run `make load-test` in a terminal and take a screenshot of the output.
-
-![Load Test Results](docs/assets/load-test-results.png)
-
-```
-📊 Results:
-   Total events:  10000
-   Succeeded:     10000
-   Failed:        0
-   Duration:      1.1s
-   Throughput:    9075 events/sec
-   Batch RTT p50: 48ms
-   Batch RTT p99: 112ms
-
-✅ Acceptance criteria met: 9075 events/sec ≥ 500 events/sec
-```
+![Load Test Results](docs/assets/load_test_results.png)
 
 **Why these numbers?**
-The async producer is the key — HTTP handlers return 202 before Kafka is even involved. The bottleneck is Kafka's `WriteMessages` throughput from the background goroutine, not the HTTP layer. Under higher concurrency the channel buffer absorbs bursts without applying backpressure to HTTP clients.
+The async producer is the key — HTTP handlers return 202 before Kafka is even involved. The API is measuring pure HTTP + channel enqueue throughput: validate, assign `event_id`, push to the in-memory channel, return. Kafka writes happen asynchronously in a background goroutine, completely off the critical path. 248,600 events/sec reflects how fast the Go HTTP server can accept and acknowledge requests on localhost — the channel absorbs every burst without ever blocking an HTTP client.
 
 ---
 
