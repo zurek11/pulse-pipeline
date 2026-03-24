@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/zurek11/pulse-pipeline/services/api/metrics"
 	"github.com/zurek11/pulse-pipeline/services/api/middleware"
 	"github.com/zurek11/pulse-pipeline/services/api/models"
 )
@@ -26,7 +27,7 @@ type batchResponse struct {
 }
 
 // batchProducer is the interface BatchHandler uses to write events to Kafka.
-// Defined at point of use — implemented by kafka.Producer.
+// Defined at point of use — implemented by kafka.AsyncProducer.
 type batchProducer interface {
 	ProduceBatch(ctx context.Context, events []*models.Event) error
 }
@@ -35,11 +36,13 @@ type batchProducer interface {
 type BatchHandler struct {
 	producer batchProducer
 	logger   *slog.Logger
+	metrics  *metrics.API
 }
 
-// NewBatchHandler constructs a BatchHandler with the given producer and logger.
-func NewBatchHandler(producer batchProducer, logger *slog.Logger) *BatchHandler {
-	return &BatchHandler{producer: producer, logger: logger}
+// NewBatchHandler constructs a BatchHandler with the given producer, logger, and metrics.
+// Pass nil for metrics to disable instrumentation (e.g. in tests).
+func NewBatchHandler(producer batchProducer, logger *slog.Logger, m *metrics.API) *BatchHandler {
+	return &BatchHandler{producer: producer, logger: logger, metrics: m}
 }
 
 func (h *BatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +80,9 @@ func (h *BatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"index", i,
 				"error", err,
 			)
+			if h.metrics != nil {
+				h.metrics.ValidationErrors.Inc()
+			}
 			h.writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("event[%d]: %s", i, err.Error()))
 			return
@@ -92,7 +98,7 @@ func (h *BatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Produce all events in a single Kafka round-trip.
+	// Enqueue all events for async Kafka delivery in one call.
 	ptrs := make([]*models.Event, len(req.Events))
 	for i := range req.Events {
 		ptrs[i] = &req.Events[i]
@@ -105,6 +111,12 @@ func (h *BatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 		h.writeError(w, http.StatusInternalServerError, "failed to produce to Kafka")
 		return
+	}
+
+	if h.metrics != nil {
+		for _, e := range req.Events {
+			h.metrics.EventsProduced.WithLabelValues(e.EventType).Inc()
+		}
 	}
 
 	eventIDs := make([]string, len(req.Events))

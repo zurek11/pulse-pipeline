@@ -375,15 +375,16 @@ CLUSTER BY customer_id, event_type;
 
 ### Phase 5: Observability 📊
 
-**Goal:** Prometheus metrics and Grafana dashboard.
+**Goal:** Prometheus metrics, Grafana dashboard, and async API ingestion.
 
-- [ ] API metrics: request count, latency histogram, produce errors, validation failures
-- [ ] Consumer metrics: consumed count, write latency, lag, buffer size, DLQ count
-- [ ] Prometheus scrape config for both services
-- [ ] Grafana dashboard JSON (provisioned automatically)
-- [ ] Verify: dashboard shows live data during load test
+- [x] Async API ingestion: return `202 Accepted` immediately after validation, produce to Kafka in background goroutine — decouples HTTP response time from Kafka latency, eliminates EOF errors under load
+- [x] API metrics: request count, latency histogram, produce errors, validation failures
+- [x] Consumer metrics: consumed count, write latency, lag, buffer size, DLQ count
+- [x] Fix Prometheus scrape port for consumer (`8081` → `8083`)
+- [x] Grafana dashboard JSON (provisioned automatically)
+- [x] Verify: dashboard shows live data during load test, load test shows 0 errors with async ingestion
 
-**Acceptance:** Grafana dashboard shows all 8 panels with real data.
+**Acceptance:** Grafana dashboard shows all 8 panels with real data. Load test completes with 0 EOF errors. ✅ — released as v0.5.0
 
 ---
 

@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // Connect establishes a MongoDB connection, verifies it with a ping,
 // ensures all required indexes exist, and returns the client and collection.
 func Connect(ctx context.Context, uri, database, collection string) (*mongo.Client, *mongo.Collection, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	// v2: Connect no longer takes a context as the first argument.
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect to mongodb: %w", err)
 	}

@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/zurek11/pulse-pipeline/services/consumer/metrics"
 )
 
 // BulkWriter batches events and writes them to MongoDB using idempotent upserts.
@@ -16,15 +19,18 @@ import (
 type BulkWriter struct {
 	collection *mongo.Collection
 	logger     *slog.Logger
+	metrics    *metrics.Consumer
 	mu         sync.Mutex
 	models     []mongo.WriteModel
 }
 
 // NewBulkWriter creates a new BulkWriter targeting the given collection.
-func NewBulkWriter(collection *mongo.Collection, logger *slog.Logger) *BulkWriter {
+// Pass nil for metrics to disable instrumentation (e.g. in tests).
+func NewBulkWriter(collection *mongo.Collection, logger *slog.Logger, m *metrics.Consumer) *BulkWriter {
 	return &BulkWriter{
 		collection: collection,
 		logger:     logger,
+		metrics:    m,
 		models:     make([]mongo.WriteModel, 0),
 	}
 }
@@ -54,16 +60,27 @@ func (w *BulkWriter) Flush(ctx context.Context) (int64, error) {
 		return 0, nil
 	}
 
+	start := time.Now()
+
 	opts := options.BulkWrite().SetOrdered(false)
 	result, err := w.collection.BulkWrite(ctx, w.models, opts)
+
+	duration := time.Since(start).Seconds()
+
 	if err != nil {
 		return 0, fmt.Errorf("bulk write: %w", err)
+	}
+
+	if w.metrics != nil {
+		w.metrics.WriteDuration.Observe(duration)
+		w.metrics.DuplicatesSkipped.Add(float64(result.MatchedCount))
 	}
 
 	w.logger.Info("bulk write completed",
 		"inserted", result.UpsertedCount,
 		"duplicates_skipped", result.MatchedCount,
 		"batch_size", len(w.models),
+		"duration_ms", duration*1000,
 	)
 
 	w.models = w.models[:0]

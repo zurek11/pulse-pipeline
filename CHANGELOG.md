@@ -21,6 +21,50 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.5.0] - 2026-03-24
+
+### Phase 5: Observability 📊
+
+**Goal:** Prometheus metrics, Grafana dashboard, and async API ingestion.
+
+### Added
+
+- **`services/api/kafka/async_producer.go`** — `AsyncProducer` wrapping `kafka.Writer`:
+  - Returns immediately from `Produce` / `ProduceBatch` — HTTP handlers never wait on Kafka
+  - Background goroutine drains a buffered channel (capacity 10,000) in natural batches
+  - Graceful `Close()` drains queue and flushes before shutting down the writer
+  - Eliminates EOF errors under high concurrency seen with the sync producer
+- **`services/api/metrics/metrics.go`** — `API` struct with 6 metrics on a custom `prometheus.Registry`:
+  - `pulse_api_requests_total` (counter_vec: method, path, status)
+  - `pulse_api_request_duration_seconds` (histogram_vec: method, path)
+  - `pulse_api_events_produced_total` (counter_vec: event_type)
+  - `pulse_api_validation_errors_total` (counter)
+  - `pulse_api_produce_errors_total` (counter)
+  - `pulse_api_queue_depth` (gauge)
+- **`services/api/middleware/metrics.go`** — HTTP metrics middleware recording per-request latency and status counts via a `statusRecorder` wrapper
+- **`services/consumer/metrics/metrics.go`** — `Consumer` struct with 6 metrics:
+  - `pulse_consumer_events_consumed_total` (counter_vec: event_type)
+  - `pulse_consumer_dlq_total` (counter)
+  - `pulse_consumer_write_duration_seconds` (histogram)
+  - `pulse_consumer_writes_total` (counter_vec: status)
+  - `pulse_consumer_buffer_size` (gauge)
+  - `pulse_consumer_duplicates_skipped_total` (counter)
+- **`monitoring/grafana/provisioning/dashboards/pipeline.json`** — 8-panel Grafana dashboard auto-provisioned on startup: events produced/sec, API latency p50/p99, events consumed/sec, MongoDB write latency p50/p99, error rate, events by type, consumer buffer size, DLQ events/sec
+
+### Changed
+
+- **`services/api/main.go`** — uses `AsyncProducer`; exposes `GET /metrics` via `promhttp`; adds metrics middleware; wires `APIMetrics` to handlers
+- **`services/api/handlers/track.go`** — accepts `*metrics.API` (nil-safe); increments `events_produced_total` and `validation_errors_total`
+- **`services/api/handlers/batch.go`** — accepts `*metrics.API` (nil-safe); increments per-event `events_produced_total` and `validation_errors_total`
+- **`services/consumer/kafka/consumer.go`** — accepts `*metrics.Consumer` (nil-safe); tracks `events_consumed_total`, `dlq_total`, `buffer_size`
+- **`services/consumer/mongodb/writer.go`** — accepts `*metrics.Consumer` (nil-safe); records `write_duration_seconds` and `duplicates_skipped_total` on each flush
+- **`services/consumer/main.go`** — exposes `GET /metrics` on `:8083`; wires `ConsumerMetrics`; default `METRICS_ADDR` fixed to `:8083`
+- **`monitoring/prometheus/prometheus.yml`** — fixed consumer scrape target `consumer:8081` → `consumer:8083`
+- **`services/api/go.mod` / `services/consumer/go.mod`** — added `github.com/prometheus/client_golang v1.23.2`
+- Handler + writer + consumer tests updated to pass `nil` for metrics (nil-safe throughout)
+
+---
+
 ## [0.4.0] - 2026-03-24
 
 ### Phase 4: Batch Endpoint + Load Testing 📦
@@ -149,7 +193,8 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...v0.2.0

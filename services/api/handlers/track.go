@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/zurek11/pulse-pipeline/services/api/metrics"
 	"github.com/zurek11/pulse-pipeline/services/api/middleware"
 	"github.com/zurek11/pulse-pipeline/services/api/models"
 )
@@ -13,7 +14,7 @@ import (
 const maxBodyBytes = 64 * 1024 // 64 KB
 
 // KafkaProducer is the interface the TrackHandler uses to emit events.
-// Defined here at the point of use — implemented by kafka.Producer.
+// Defined here at the point of use — implemented by kafka.AsyncProducer.
 type KafkaProducer interface {
 	Produce(ctx context.Context, key string, value interface{}) error
 }
@@ -22,13 +23,16 @@ type KafkaProducer interface {
 type TrackHandler struct {
 	producer KafkaProducer
 	logger   *slog.Logger
+	metrics  *metrics.API
 }
 
-// NewTrackHandler constructs a TrackHandler with the given producer and logger.
-func NewTrackHandler(producer KafkaProducer, logger *slog.Logger) *TrackHandler {
+// NewTrackHandler constructs a TrackHandler with the given producer, logger, and metrics.
+// Pass nil for metrics to disable instrumentation (e.g. in tests).
+func NewTrackHandler(producer KafkaProducer, logger *slog.Logger, m *metrics.API) *TrackHandler {
 	return &TrackHandler{
 		producer: producer,
 		logger:   logger,
+		metrics:  m,
 	}
 }
 
@@ -54,6 +58,9 @@ func (h *TrackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"request_id", requestID,
 			"error", err,
 		)
+		if h.metrics != nil {
+			h.metrics.ValidationErrors.Inc()
+		}
 		h.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -75,6 +82,10 @@ func (h *TrackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 		h.writeError(w, http.StatusInternalServerError, "failed to produce to Kafka")
 		return
+	}
+
+	if h.metrics != nil {
+		h.metrics.EventsProduced.WithLabelValues(event.EventType).Inc()
 	}
 
 	h.logger.InfoContext(ctx, "event accepted",
