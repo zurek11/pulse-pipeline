@@ -21,6 +21,32 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.6.0] - 2026-03-24
+
+### Phase 6: GCP Infrastructure 🏗️☁️
+
+**Goal:** Terraform configurations for GCP deployment (config only — not deployed).
+
+### Added
+
+- **`infra/terraform/main.tf`** — Terraform provider config (`hashicorp/google ~> 5.0`), `required_version >= 1.5`, commented-out GCS backend template
+- **`infra/terraform/variables.tf`** — all config parameterised: `project_id`, `region` (default `europe-west1`), GKE node sizing, autoscaling bounds, BigQuery dataset ID, GCS bucket name, retention days, alert thresholds and notification channel
+- **`infra/terraform/outputs.tf`** — exports cluster name, endpoint (sensitive), CA certificate (sensitive), BigQuery table ID, GCS bucket URL, VPC and subnet names
+- **`infra/terraform/networking.tf`** — dedicated VPC (`auto_create_subnetworks = false`), GKE subnet with pod (`10.1.0.0/16`) and service (`10.2.0.0/20`) secondary ranges for VPC-native mode, internal firewall, master-to-node firewall, Cloud Router + NAT for egress without public IPs
+- **`infra/terraform/gke.tf`** — regional GKE cluster with Workload Identity (`GKE_METADATA` mode), separate node pool (`e2-standard-2`, autoscaling 1–3 nodes, auto-repair + auto-upgrade), VPC-native IP allocation, Cloud Logging + Monitoring integrations, `REGULAR` release channel
+- **`infra/terraform/bigquery.tf`** — `pulse_events` dataset, `events` table partitioned by `DATE(timestamp)`, clustered by `customer_id + event_type`, schema mirrors MongoDB collection (8 fields, JSON type for `properties` and `context`)
+- **`infra/terraform/gcs.tf`** — exports bucket with versioning enabled, 90-day lifecycle deletion rule, 30-day archived-version deletion rule, uniform bucket-level access
+- **`infra/terraform/monitoring.tf`** — three alert policies: API 5xx error rate (>5% over 5 min), consumer Kafka lag (>10k messages), API uptime check (`/health` synthetic monitor); all wired to optional notification channel variable via `locals`
+- **`infra/k8s/namespace.yaml`** — `pulse-pipeline` namespace
+- **`infra/k8s/api.yaml`** — API `Deployment` (2 replicas), `ConfigMap`, `ServiceAccount` with Workload Identity annotation, `LoadBalancer` Service, `HorizontalPodAutoscaler` (2–5 replicas at 70% CPU), Prometheus scrape annotations, topology spread constraints
+- **`infra/k8s/consumer.yaml`** — Consumer `Deployment` (1 replica, 60s termination grace period for graceful flush), `ConfigMap`, `ServiceAccount` with Workload Identity annotation, `ClusterIP` Service for metrics scraping
+
+### Verified
+
+- `terraform validate` passes with no credentials required (`terraform init -backend=false`)
+
+---
+
 ## [0.5.0] - 2026-03-24
 
 ### Phase 5: Observability 📊
@@ -193,7 +219,8 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...v0.3.0

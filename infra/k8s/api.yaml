@@ -1,0 +1,128 @@
+---
+# ConfigMap holds non-secret environment configuration for the API service.
+# Secret values (KAFKA_BROKERS, MONGO_URI) would live in a Kubernetes Secret
+# or be injected via Workload Identity + Secret Manager in production.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: pulse-pipeline
+data:
+  API_ADDR: ":8080"
+  KAFKA_BROKERS: "kafka:9092"           # Replace with Confluent Cloud or GKE-hosted Kafka endpoint.
+  MONGO_URI: "mongodb://mongodb:27017"  # Replace with MongoDB Atlas URI or GKE-hosted MongoDB.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulse-api
+  namespace: pulse-pipeline
+  labels:
+    app: pulse-api
+spec:
+  replicas: 2  # Two replicas for basic HA; HPA can scale further under load.
+  selector:
+    matchLabels:
+      app: pulse-api
+  template:
+    metadata:
+      labels:
+        app: pulse-api
+      annotations:
+        # Prometheus scrape annotations — used by a Prometheus Operator ServiceMonitor
+        # or by prometheus.io/scrape auto-discovery if configured in prometheus.yml.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: pulse-api  # Binds to GCP service account via Workload Identity.
+      containers:
+        - name: api
+          image: pulse-pipeline-api:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: api-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+      # Spread pods across different nodes to avoid single-node failure taking down both replicas.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: pulse-api
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pulse-api
+  namespace: pulse-pipeline
+  annotations:
+    # Workload Identity: binds this K8s service account to a GCP service account.
+    # The GCP SA needs roles/bigquery.dataEditor and roles/storage.objectCreator.
+    iam.gke.io/gcp-service-account: "pulse-api@PROJECT_ID.iam.gserviceaccount.com"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulse-api
+  namespace: pulse-pipeline
+  labels:
+    app: pulse-api
+spec:
+  type: LoadBalancer  # Exposes the API externally via a GCP L4 load balancer.
+  selector:
+    app: pulse-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+
+---
+# HorizontalPodAutoscaler scales API replicas based on CPU utilisation.
+# At 70% CPU across all pods, new replicas are added (up to 5).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pulse-api
+  namespace: pulse-pipeline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pulse-api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

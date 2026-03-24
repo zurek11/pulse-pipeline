@@ -1,4 +1,4 @@
-.PHONY: up down rebuild logs test lint build load-test seed clean
+.PHONY: up down rebuild logs test lint build load-test seed clean tf-validate
 
 up:
 	docker compose up -d
@@ -30,6 +30,9 @@ load-test:
 
 seed:
 	go run scripts/seed-events/main.go
+
+tf-validate:
+	cd infra/terraform && terraform init -backend=false -input=false && terraform validate
 
 clean: ## WARNING: destroys all volumes (MongoDB data, Kafka, Grafana, Prometheus)
 	docker compose down -v
