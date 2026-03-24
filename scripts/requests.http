@@ -144,6 +144,99 @@ Content-Type: application/json
 
 ###
 
+
+# ============================================================
+# Phase 3 Validation — Event Processing (Kafka → MongoDB)
+# Prerequisites: docker compose up -d
+# ============================================================
+
+### [P3-1] Consumer health check
+# Expect: { "status": "ok" }
+GET http://localhost:8083/health
+
+###
+
+### [P3-2] Send event and verify it lands in MongoDB
+# Step 1: Send this request
+# Step 2: Run in terminal:
+#   docker compose exec mongodb mongosh pulse --eval \
+#     "db.events.find({event_id:'evt_phase3-verify-001'}).pretty()"
+# Expect: 1 document with all fields including processed_at
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "event_id": "evt_phase3-verify-001",
+  "customer_id": "user-phase3",
+  "event_type": "page_view",
+  "properties": {
+    "page": "/phase3-test"
+  }
+}
+
+###
+
+### [P3-3] Idempotency — send the same event_id twice
+# Step 1: Send this request TWICE (click Run twice)
+# Step 2: Run in terminal:
+#   docker compose exec mongodb mongosh pulse --eval \
+#     "db.events.countDocuments({event_id:'evt_dedup-test-001'})"
+# Expect: count = 1  (second send is silently skipped by $setOnInsert)
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{
+  "event_id": "evt_dedup-test-001",
+  "customer_id": "user-123",
+  "event_type": "page_view",
+  "properties": {
+    "page": "/checkout"
+  }
+}
+
+###
+
+### [P3-4] Send a burst of events (verify bulk batching)
+# Send all 3 quickly — they should land in the same MongoDB bulk write batch
+# Check consumer logs: docker compose logs -f consumer
+# Expect log: "bulk write completed" with batch_size >= 3
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{ "customer_id": "user-burst", "event_type": "page_view", "properties": { "seq": 1 } }
+
+###
+
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{ "customer_id": "user-burst", "event_type": "click", "properties": { "seq": 2 } }
+
+###
+
+POST http://localhost:8080/api/v1/track
+Content-Type: application/json
+
+{ "customer_id": "user-burst", "event_type": "search", "properties": { "seq": 3 } }
+
+###
+
+### [P3-5] Verify MongoDB indexes were created on startup
+# Run in terminal (no HTTP request needed):
+#   docker compose exec mongodb mongosh pulse --eval "db.events.getIndexes()"
+# Expect 4 indexes:
+#   _id (natural)
+#   event_id (unique) — deduplication
+#   customer_id + timestamp desc — customer timeline
+#   event_type + timestamp desc — event type filtering
+
+### [P3-6] Verify Kafka consumer group offset advancing
+# Run in terminal (no HTTP request needed):
+#   docker compose exec kafka kafka-consumer-groups.sh \
+#     --bootstrap-server localhost:9092 \
+#     --group pulse-consumer-group --describe
+# Expect: LAG = 0 after events are processed
+
 ### Batch — placeholder for Phase 4
 # POST http://localhost:8080/api/v1/track/batch
 # Content-Type: application/json

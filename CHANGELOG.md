@@ -21,6 +21,40 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.3.0] - 2026-03-23
+
+### Phase 3: Event Processing 🔄
+
+**Goal:** Consumer reads from Kafka and writes to MongoDB with idempotency.
+
+### Added
+
+- **`services/consumer/models/event.go`** — `Event` and `EventContext` structs with `bson` tags and a `ProcessedAt` timestamp field
+- **`services/consumer/mongodb/client.go`** — `Connect()`: establishes MongoDB connection, pings, and creates three indexes on startup:
+  - `event_id` (unique) — deduplication guarantee
+  - `(customer_id, timestamp desc)` — customer timeline queries
+  - `(event_type, timestamp desc)` — event type filtering
+- **`services/consumer/mongodb/writer.go`** — `BulkWriter` with idempotent upserts (`$setOnInsert` on `event_id`), unordered bulk writes, and `Add / Flush / Len / Reset` API
+- **`services/consumer/kafka/consumer.go`** — `Consumer` batch loop:
+  - Accumulates up to 100 messages or flushes every 1 second (whichever comes first)
+  - Retries MongoDB flush up to 3 times on error
+  - Routes failed batches and unparseable messages to `pulse.events.dlq.v1`
+  - Commits Kafka offsets only after successful flush or DLQ routing (at-least-once delivery)
+  - Graceful shutdown: flushes remaining buffer before returning
+- **`services/consumer/mongodb/writer_test.go`** — 5 tests: buffer management (Add, Len, Reset, empty Flush) + idempotency model test (verifies `$setOnInsert` + `event_id` filter + `Upsert=true`)
+- **`services/consumer/kafka/consumer_test.go`** — 8 tests: `parseMessage` (valid, invalid JSON, empty), `flushWithRetry` (success, all-fail, retry-then-succeed), `sendToDLQ` (forwards message, error on write failure)
+
+### Changed
+
+- **`services/consumer/main.go`** — fully wired: MongoDB connection + index setup, `BulkWriter`, `Consumer` loop in goroutine, graceful shutdown sequence (consumer → Kafka → HTTP server → MongoDB disconnect); reads `CONSUMER_BATCH_SIZE` and `CONSUMER_FLUSH_INTERVAL` env vars
+- **`services/consumer/kafka/consumer.go`** — `batchSize` and `flushEvery` now constructor parameters (configurable); `dlqSender` interface added for testability; `flushWithRetry()` extracted as package-level function
+- **`services/consumer/go.mod`** — added `github.com/segmentio/kafka-go v0.4.50` and `go.mongodb.org/mongo-driver v1.17.9`
+- **`docker-compose.yml`** — consumer port changed from `:8081` to `:8083` (`:8081` is occupied by Mongo Express); consumer `ports` mapping added
+- **`scripts/requests.http`** — Phase 3 validation section added (P3-1 through P3-6: health check, MongoDB verify, idempotency, burst batching, indexes, consumer group lag)
+- **`Makefile`** — `clean` target annotated with warning about volume destruction
+
+---
+
 ## [0.2.0] - 2026-03-23
 
 ### Phase 2: Event Ingestion 📥
@@ -67,7 +101,7 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 - **`docker-compose.yml`** — full local development stack:
   - Kafka 8.2.0 in KRaft mode (no Zookeeper) with `pulse.events.v1` (3 partitions, 7-day retention) and `pulse.events.dlq.v1` (1 partition, 30-day retention) topics created automatically on startup
   - MongoDB 8.2 with persistent volume
-  - Prometheus v3.10.0 with scrape config for API (`:8080`) and Consumer (`:8081`)
+  - Prometheus v3.10.0 with scrape config for API (`:8080`) and Consumer (`:8083`)
   - Grafana 12.4.1 with Prometheus datasource auto-provisioned
   - Kafka UI v0.7.2 at `localhost:8082`
   - Mongo Express 1.0.2 at `localhost:8081`
@@ -89,6 +123,7 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zurek11/pulse-pipeline/releases/tag/v0.1.0
