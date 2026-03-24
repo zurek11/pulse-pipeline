@@ -26,10 +26,10 @@ build:
 	cd services/consumer && go build -o ../../bin/consumer .
 
 load-test:
-	./scripts/load-test.sh
+	go run scripts/load-test/main.go
 
 seed:
-	./scripts/seed-events.sh
+	go run scripts/seed-events/main.go
 
 clean: ## WARNING: destroys all volumes (MongoDB data, Kafka, Grafana, Prometheus)
 	docker compose down -v

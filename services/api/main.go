@@ -31,6 +31,7 @@ func main() {
 	producer := kafka.NewProducer(strings.Split(brokers, ","), topic, logger)
 
 	trackHandler := handlers.NewTrackHandler(producer, logger)
+	batchHandler := handlers.NewBatchHandler(producer, logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +39,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 	mux.Handle("/api/v1/track", trackHandler)
+	mux.Handle("/api/v1/track/batch", batchHandler)
 
 	// Chain middleware: Recovery (outermost) → RequestID → handler
 	var handler http.Handler = mux
