@@ -382,9 +382,9 @@ CLUSTER BY customer_id, event_type;
 - [x] Consumer metrics: consumed count, write latency, lag, buffer size, DLQ count
 - [x] Fix Prometheus scrape port for consumer (`8081` → `8083`)
 - [x] Grafana dashboard JSON (provisioned automatically)
-- [ ] Verify: dashboard shows live data during load test, load test shows 0 errors with async ingestion
+- [x] Verify: dashboard shows live data during load test, load test shows 0 errors with async ingestion
 
-**Acceptance:** Grafana dashboard shows all 8 panels with real data. Load test completes with 0 EOF errors.
+**Acceptance:** Grafana dashboard shows all 8 panels with real data. Load test completes with 0 EOF errors. ✅ — released as v0.5.0
 
 ---
 
