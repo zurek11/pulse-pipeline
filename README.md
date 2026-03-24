@@ -13,6 +13,7 @@ A real-time event tracking pipeline built to learn **Go**, **Apache Kafka**, **M
 - [How It Works](#how-it-works)
 - [Key Design Decisions](#key-design-decisions)
 - [GCP Deployment Design](#gcp-deployment-design)
+- [CI/CD Pipeline](#cicd-pipeline)
 - [Observability](#observability)
 - [Load Test Results](#load-test-results)
 - [Quick Start](#quick-start)
@@ -159,56 +160,127 @@ See [`docs/decisions.md`](docs/decisions.md) for full rationale. Summary:
 
 ## GCP Deployment Design
 
-The `infra/` directory contains Terraform configs and Kubernetes manifests that describe how this pipeline would run on GCP. **Not deployed** — config only, `terraform validate` passes.
+The `infra/` directory contains Terraform configs and Kubernetes manifests showing how this pipeline would run on GCP. **Not deployed** — config only, `terraform validate` passes.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          GCP Project                            │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │               VPC: pulse-pipeline-vpc                  │    │
-│  │                                                        │    │
-│  │  ┌──────────────────────────────────────────────────┐  │    │
-│  │  │          GKE Cluster  (europe-west1)             │  │    │
-│  │  │     Regional · 3 zones · HA control plane        │  │    │
-│  │  │                                                  │  │    │
-│  │  │  ┌─────────────────┐   ┌──────────────────────┐  │  │    │
-│  │  │  │   pulse-api     │   │   pulse-consumer     │  │  │    │
-│  │  │  │   2–5 pods      │   │   1–3 pods           │  │  │    │
-│  │  │  │   HPA @ 70% CPU │   │   1 pod / partition  │  │  │    │
-│  │  │  │   LoadBalancer  │   │   ClusterIP only     │  │  │    │
-│  │  │  └─────────────────┘   └──────────────────────┘  │  │    │
-│  │  │                                                  │  │    │
-│  │  │   Node pool: e2-standard-2 · autoscale 1–3       │  │    │
-│  │  │   Workload Identity · auto-repair/upgrade        │  │    │
-│  │  └──────────────────────────────────────────────────┘  │    │
-│  │                                                        │    │
-│  │   Cloud NAT  (egress without public node IPs)          │    │
-│  └────────────────────────────────────────────────────────┘    │
-│                                                                 │
-│  ┌───────────────────────┐   ┌────────────────────────────┐    │
-│  │  BigQuery             │   │  Cloud Storage             │    │
-│  │  dataset: pulse_events│   │  pulse-pipeline-exports    │    │
-│  │  partition by         │   │  versioning enabled        │    │
-│  │    DATE(timestamp)    │   │  90-day lifecycle deletion │    │
-│  │  cluster by           │   │  MongoDB → GCS → BQ flow   │    │
-│  │    customer_id        │   └────────────────────────────┘    │
-│  └───────────────────────┘                                      │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │  Cloud Monitoring                                      │    │
-│  │  · Alert: API error rate > 5%  (5-min window)         │    │
-│  │  · Alert: Consumer lag > 10k messages                 │    │
-│  │  · Uptime check: GET /health every 60s                │    │
-│  └────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
+> Mermaid has no native GCP icon set. For a production architecture diagram with official GCP icons, tools like [draw.io](https://draw.io) or [Google's diagramming guidelines](https://cloud.google.com/icons) would be used. The diagram below uses Mermaid subgraphs to represent the resource hierarchy.
+
+```mermaid
+flowchart TB
+    CLIENTS["Internet · Clients"]
+
+    subgraph GCP ["GCP Project"]
+        subgraph VPC ["VPC: pulse-pipeline-vpc"]
+            subgraph GKE ["GKE Cluster · europe-west1 · regional · 3 zones"]
+                API["pulse-api
+                2–5 pods · HPA @ 70% CPU
+                LoadBalancer Service"]
+                CONSUMER["pulse-consumer
+                1–3 pods · 1 per partition
+                ClusterIP Service"]
+            end
+            NAT["Cloud NAT
+            egress without public IPs"]
+        end
+
+        BQ["BigQuery
+        dataset: pulse_events
+        partition: DATE(timestamp)
+        cluster: customer_id, event_type"]
+
+        GCS["Cloud Storage
+        pulse-pipeline-exports
+        versioning · 90-day lifecycle"]
+
+        MON["Cloud Monitoring
+        · Alert: API error rate > 5%
+        · Alert: consumer lag > 10k msgs
+        · Uptime check: GET /health / 60s"]
+    end
+
+    KAFKA["Apache Kafka
+    (Confluent Cloud or self-hosted)"]
+
+    MONGO["MongoDB
+    (Atlas or self-hosted)"]
+
+    CLIENTS -->|"HTTPS · POST /api/v1/track"| API
+    API -->|"produce · key=customer_id"| KAFKA
+    KAFKA -->|"consume · consumer group"| CONSUMER
+    CONSUMER -->|"bulk upsert"| MONGO
+    MONGO -.->|"future: scheduled export"| GCS
+    GCS -.->|"BigQuery load job"| BQ
+    API & CONSUMER -->|"metrics + uptime"| MON
+    GKE --> NAT
+    NAT -->|"egress"| KAFKA & MONGO
 ```
 
 **Key GCP choices:**
-- **GKE over Cloud Run** — the consumer needs a persistent Kafka connection and stateful offset management; Cloud Run's ephemeral instances are a poor fit
+- **GKE over Cloud Run** — the consumer needs a persistent Kafka connection and stateful offset management; Cloud Run's ephemeral instances would trigger continuous consumer group rebalances
 - **BigQuery for analytics** — operational queries go to MongoDB; full-scan analytics (e.g. "all purchases last 30 days by region") go to BigQuery. Partitioning by date + clustering by `customer_id` means most queries scan only the relevant partitions
 - **Cloud NAT** — nodes have no public IPs; all egress routes through NAT, reducing the attack surface
 - **Workload Identity** — pods authenticate to GCP APIs via Kubernetes service accounts bound to GCP service accounts; no JSON key files anywhere
+
+---
+
+## CI/CD Pipeline
+
+### CI — GitHub Actions (`.github/workflows/ci.yml`)
+
+Every push to any branch and every pull request into `main` triggers 4 parallel jobs:
+
+```mermaid
+flowchart LR
+    PUSH["git push\nor PR opened"]
+
+    subgraph CI ["GitHub Actions · parallel jobs"]
+        T["test\ngo test -v -race -count=1\nboth services"]
+        L["lint\ngolangci-lint\nboth services"]
+        B["build\ndocker build\nboth services"]
+        TF["terraform\nterraform init + validate\nno credentials needed"]
+    end
+
+    PASS["all jobs green\nPR can merge"]
+    FAIL["any job fails\nmerge blocked"]
+
+    PUSH --> T & L & B & TF
+    T & L & B & TF --> PASS
+    T & L & B & TF --> FAIL
+```
+
+**Job details:**
+
+| Job | What it does | Why |
+|---|---|---|
+| `test` | `go test -v -race -count=1 ./...` on both services | `-race` catches data races that don't show up in normal test runs |
+| `lint` | `golangci-lint` via official action | Enforces code style, catches common mistakes (error not checked, unused vars, etc.) |
+| `build` | `docker build` tagged with the commit SHA | Verifies the Dockerfile and multi-stage build work; image is not pushed (no registry in this project) |
+| `terraform` | `terraform init -backend=false` + `terraform validate` | Catches `.tf` syntax errors and invalid resource configs without touching any cloud account |
+
+Both `test` and `lint` use a **matrix strategy** — a single job definition runs independently for `api` and `consumer`, so failures are reported per-service rather than as one combined job.
+
+### CD — Conceptual Production Flow
+
+This project doesn't deploy to GCP, but a production CD pipeline would look like this:
+
+```mermaid
+flowchart LR
+    MERGE["merge to main\n+ tag vX.Y.Z"]
+
+    subgraph CD ["CD Pipeline (conceptual)"]
+        IMG["build & push images\ngcr.io/project/pulse-api:vX.Y.Z
+        gcr.io/project/pulse-consumer:vX.Y.Z"]
+        TF["terraform apply\ninfra changes only"]
+        DEPLOY["kubectl set image\nor Helm upgrade\nGKE rolling update"]
+        VERIFY["smoke test\nGET /health\nwatch consumer lag"]
+    end
+
+    MERGE --> IMG
+    IMG --> TF
+    TF --> DEPLOY
+    DEPLOY --> VERIFY
+```
+
+The rolling update strategy means GKE replaces pods one at a time — no downtime. The consumer's 60-second `terminationGracePeriodSeconds` ensures in-flight Kafka messages are flushed and offsets are committed before a pod is killed.
 
 ---
 
@@ -220,7 +292,8 @@ Grafana dashboard is auto-provisioned on `docker compose up` — no manual setup
 
 ### Dashboard Screenshot
 
-> 📸 _Run `docker compose up -d && make load-test` to see live data_
+> 📸 **Placeholder** — replace `docs/assets/grafana-dashboard.png` with a real screenshot.
+> To capture: run `docker compose up -d && make load-test`, then open http://localhost:3000.
 
 ![Grafana Dashboard](docs/assets/grafana-dashboard.png)
 
@@ -247,7 +320,8 @@ Run it yourself: `make load-test` (requires `docker compose up -d`)
 
 ### Results Screenshot
 
-> 📸 _Run `make load-test` to reproduce_
+> 📸 **Placeholder** — replace `docs/assets/load-test-results.png` with a real screenshot.
+> To capture: run `make load-test` in a terminal and take a screenshot of the output.
 
 ![Load Test Results](docs/assets/load-test-results.png)
 
@@ -335,7 +409,8 @@ pulse-pipeline/
 ├── Makefile                   # up, down, test, lint, build, load-test, tf-validate
 ├── docs/
 │   ├── PROJECT_SPEC.md        # Full specification, phases, acceptance criteria
-│   └── decisions.md           # Architecture Decision Records
+│   ├── decisions.md           # Architecture Decision Records (10 ADRs)
+│   └── assets/                # Screenshots: grafana-dashboard.png, load-test-results.png
 ├── services/
 │   ├── api/                   # HTTP Tracking API
 │   │   ├── main.go            # Server setup, graceful shutdown, signal handling
@@ -376,7 +451,7 @@ pulse-pipeline/
 │   └── seed-events/           # Seed realistic e-commerce events
 └── .github/
     └── workflows/
-        └── ci.yml             # go test + golangci-lint + docker build on every push
+        └── ci.yml             # go test + golangci-lint + docker build + tf validate
 ```
 
 ---
@@ -393,7 +468,7 @@ pulse-pipeline/
 | Dashboards | Grafana (JSON provisioning) | Dashboards as code — auto-loaded on `docker compose up`, no manual setup |
 | IaC | Terraform + GCP provider | Declarative infrastructure; `terraform validate` as CI gate |
 | Containers | Docker Compose | Reproducible local environment, single command to start everything |
-| CI | GitHub Actions | `go test` + `golangci-lint` + `docker build` on every push |
+| CI | GitHub Actions | `go test` + `golangci-lint` + `docker build` + `terraform validate` on every push |
 
 ---
 
