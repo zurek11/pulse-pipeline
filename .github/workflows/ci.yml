@@ -46,11 +46,6 @@ jobs:
         with:
           version: latest
           working-directory: services/${{ matrix.service }}
-          # golangci-lint is built with a specific Go version and refuses to run
-          # if the module's go directive is higher than its own build version.
-          # --go=1.24 overrides the version check — our code uses no features
-          # newer than Go 1.22, so lint results are identical.
-          args: --go=1.24
 
   build:
     name: Docker Build
