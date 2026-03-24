@@ -364,12 +364,12 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Batch event ingestion and basic performance validation.
 
-- [ ] `POST /api/v1/track/batch` — accept array of events (max 100)
-- [ ] Load test script: send 10,000 events, measure throughput and latency
-- [ ] Seed data script: generate realistic e-commerce events
-- [ ] Verify: batch endpoint handles 100 events in single request, load test completes
+- [x] `POST /api/v1/track/batch` — accept array of events (max 100)
+- [x] Load test script: send 10,000 events, measure throughput and latency
+- [x] Seed data script: generate realistic e-commerce events
+- [x] Verify: batch endpoint handles 100 events in single request, load test completes
 
-**Acceptance:** Batch endpoint works. Load test shows >500 events/sec locally.
+**Acceptance:** Batch endpoint works. Load test shows >500 events/sec locally. ✅ — released as v0.4.0
 
 ---
 
@@ -406,8 +406,9 @@ CLUSTER BY customer_id, event_type;
 
 ### Phase 7: Polish + Documentation 📝
 
-**Goal:** README, CI, and interview-ready presentation.
+**Goal:** README, CI, async API ingestion, and interview-ready presentation.
 
+- [ ] Async API ingestion: return `202 Accepted` immediately after validation, produce to Kafka in a background goroutine with an internal channel buffer — decouples HTTP response time from Kafka latency so `WriteTimeout` is never a bottleneck
 - [ ] README with architecture diagram, quick start, and project structure
 - [ ] GitHub Actions CI: `go test`, `golangci-lint`, `docker build`
 - [ ] CHANGELOG.md with all phases
@@ -415,7 +416,7 @@ CLUSTER BY customer_id, event_type;
 - [ ] Final load test results documented
 - [ ] Verify: clone from scratch, `docker compose up`, `make load-test` — everything works
 
-**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes.
+**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes. Load test shows no EOF errors under full concurrency.
 
 ---
 

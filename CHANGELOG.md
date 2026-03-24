@@ -21,6 +21,32 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
+## [0.4.0] - 2026-03-24
+
+### Phase 4: Batch Endpoint + Load Testing 📦
+
+**Goal:** Batch event ingestion and basic performance validation.
+
+### Added
+
+- **`services/api/handlers/batch.go`** — `POST /api/v1/track/batch` endpoint:
+  - Accepts `{ "events": [...] }` with up to 100 events per request
+  - Validates all events first (fail fast with index: `event[N]: <reason>`)
+  - Sets defaults (event_id, timestamp, received_at) before producing
+  - Returns `202 Accepted` with `{ "accepted": N, "event_ids": [...] }`
+  - 1 MB body limit; reuses `KafkaProducer` interface from `TrackHandler`
+- **`services/api/handlers/batch_test.go`** — 6 tests: success (3 events), empty array, invalid event at index, exceeds max size (101 events), wrong method, Kafka error, preserved event IDs
+- **`scripts/load-test/main.go`** — Go load test: sends 10,000 events via batch endpoint (100 batches × 100 events, concurrency=20); reports throughput (events/sec), p50/p99 batch RTT; exits non-zero if throughput < 500 events/sec
+- **`scripts/seed-events/main.go`** — Go seed script: 20 realistic e-commerce events across three customer journeys (alice-001 purchases, bob-002 abandons cart, carol-003 repeat buyer)
+
+### Changed
+
+- **`services/api/main.go`** — registered `POST /api/v1/track/batch` route
+- **`Makefile`** — `load-test` and `seed` targets updated to use `go run` (replaced placeholder `.sh` scripts)
+- **`scripts/requests.http`** — Phase 4 validation section added (P4-1 through P4-5: batch happy path, error cases, seed, load test)
+
+---
+
 ## [0.3.0] - 2026-03-23
 
 ### Phase 3: Event Processing 🔄
@@ -123,7 +149,8 @@ Planned releases: `v0.1.0` → `v0.2.0` → ... → `v0.6.0` → `v1.0.0`
 
 ---
 
-[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/zurek11/pulse-pipeline/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zurek11/pulse-pipeline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zurek11/pulse-pipeline/releases/tag/v0.1.0

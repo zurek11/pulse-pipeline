@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/zurek11/pulse-pipeline/services/api/models"
 )
 
 // mockProducer satisfies the KafkaProducer interface for testing.
@@ -20,6 +22,14 @@ type mockProducer struct {
 func (m *mockProducer) Produce(_ context.Context, key string, _ interface{}) error {
 	m.calls++
 	m.lastKey = key
+	return m.produceErr
+}
+
+func (m *mockProducer) ProduceBatch(_ context.Context, events []*models.Event) error {
+	for _, e := range events {
+		m.calls++
+		m.lastKey = e.CustomerID
+	}
 	return m.produceErr
 }
 
