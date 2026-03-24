@@ -364,12 +364,12 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Batch event ingestion and basic performance validation.
 
-- [ ] `POST /api/v1/track/batch` — accept array of events (max 100)
-- [ ] Load test script: send 10,000 events, measure throughput and latency
-- [ ] Seed data script: generate realistic e-commerce events
-- [ ] Verify: batch endpoint handles 100 events in single request, load test completes
+- [x] `POST /api/v1/track/batch` — accept array of events (max 100)
+- [x] Load test script: send 10,000 events, measure throughput and latency
+- [x] Seed data script: generate realistic e-commerce events
+- [x] Verify: batch endpoint handles 100 events in single request, load test completes
 
-**Acceptance:** Batch endpoint works. Load test shows >500 events/sec locally.
+**Acceptance:** Batch endpoint works. Load test shows >500 events/sec locally. ✅ — released as v0.4.0
 
 ---
 
