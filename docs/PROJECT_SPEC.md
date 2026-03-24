@@ -409,13 +409,13 @@ CLUSTER BY customer_id, event_type;
 
 **Goal:** Interview-ready README, CI pipeline, and architecture documentation.
 
-- [ ] README: expanded with "how it works" narrative, key design decisions, GCP infrastructure diagram, Grafana dashboard screenshot, load test results
-- [ ] GitHub Actions CI: `go test`, `golangci-lint`, `docker build`
-- [ ] `docs/decisions.md` — single-file ADR covering all key architectural choices
-- [ ] CHANGELOG.md with all phases
-- [ ] Verify: clone from scratch, `docker compose up`, `make load-test` — everything works
+- [x] README: expanded with "how it works" narrative, key design decisions, GCP infrastructure diagram, Grafana dashboard screenshot, load test results
+- [x] GitHub Actions CI: `go test`, `golangci-lint`, `docker build`
+- [x] `docs/decisions.md` — single-file ADR covering all key architectural choices
+- [x] CHANGELOG.md with all phases
+- [x] Verify: clone from scratch, `docker compose up`, `make load-test` — everything works
 
-**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes. An interviewer reading the README understands what was built, why each decision was made, and what the results were.
+**Acceptance:** A stranger can clone, run, and understand the project in 10 minutes. An interviewer reading the README understands what was built, why each decision was made, and what the results were. ✅ — released as v0.7.0
 
 ---
 
